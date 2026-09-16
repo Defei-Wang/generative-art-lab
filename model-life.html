@@ -25,17 +25,15 @@
         const ctx = canvas.getContext('2d');
         let width, height;
 
-        // 优化后的物理引擎参数
         const numTypes = 4;        
-        const numParticles = 900;  // 增加粒子密度以构建更坚固的组织
-        const friction = 0.55;     // 关键优化：大幅增加流体阻尼(0.85 -> 0.55)，抑制剧烈抖动
-        const rMax = 70;           // 相互作用最大半径
-        const rMin = 18;           // 刚体碰撞半径（增大以产生更明显的细胞体积）
-        const forceFactor = 0.25;  // 关键优化：降低整体作用力(0.5 -> 0.25)，运动更优雅
+        const numParticles = 900;
+        const friction = 0.55;
+        const rMax = 70;
+        const rMin = 18;
+        const forceFactor = 0.25;
         
         let particles = [];
         let interactionMatrix = [];
-        // 调整颜色映射，使其具有深海生物发光的质感
         const colors = ['#FF2255', '#00DDFF', '#55FF44', '#FFBB00'];
 
         let pointer = { x: -1000, y: -1000, active: false };
@@ -65,11 +63,8 @@
         canvas.addEventListener('touchmove', (e) => { e.preventDefault(); updatePointer(e); }, {passive: false});
         canvas.addEventListener('touchend', releasePointer);
 
-        // 初始化物理环境
         function initSystem(usePreset = false) {
             if (usePreset) {
-                // 预设“水母/游动细胞”基因组：
-                // 红核(0)高度自吸；青膜(1)吸附红核但适度排斥；绿尾(2)追逐青膜；形成持续的拓扑推进结构
                 interactionMatrix = [
                     [ 0.8, -0.1, -0.2,  0.0 ], 
                     [ 0.4,  0.7, -0.2, -0.1 ], 
@@ -77,16 +72,13 @@
                     [ 0.0, -0.2,  0.4,  0.6 ]  
                 ];
             } else {
-                // 受控随机生成：不再是纯混沌
                 interactionMatrix = [];
                 for (let i = 0; i < numTypes; i++) {
                     let row = [];
                     for (let j = 0; j < numTypes; j++) {
                         if (i === j) {
-                            // 基因锁约束 1：同类必须相吸（0.4 到 0.9），确保组织结构不崩溃
                             row.push(Math.random() * 0.5 + 0.4);
                         } else {
-                            // 基因锁约束 2：异类作用力适当缩放，避免过度撕裂
                             row.push((Math.random() - 0.5) * 1.2);
                         }
                     }
@@ -94,7 +86,6 @@
                 }
             }
 
-            // 初始化粒子群坐标与状态
             particles = [];
             for (let i = 0; i < numParticles; i++) {
                 particles.push({
@@ -106,19 +97,17 @@
             }
         }
 
-        // 引力/斥力连续势能函数
         function forceFunction(r, attrForce) {
             if (r < rMin) {
-                return (r / rMin - 1); // 刚体强排斥（维持体积）
+                return (r / rMin - 1);
             } else if (r > rMin && r < rMax) {
                 const numerator = Math.abs(2 * r - rMin - rMax);
                 const denominator = rMax - rMin;
-                return attrForce * (1 - numerator / denominator); // 平滑过渡受力区
+                return attrForce * (1 - numerator / denominator);
             }
             return 0;
         }
 
-        // 核心动力学求解
         function update() {
             for (let i = 0; i < numParticles; i++) {
                 let p1 = particles[i];
@@ -131,7 +120,6 @@
                     let dx = p2.x - p1.x;
                     let dy = p2.y - p1.y;
                     
-                    // 环面折叠计算（无缝世界）
                     if (dx > width / 2) dx -= width;
                     else if (dx < -width / 2) dx += width;
                     if (dy > height / 2) dy -= height;
@@ -147,7 +135,6 @@
                     }
                 }
 
-                // 用户触摸引入高能斥力场
                 if (pointer.active) {
                     let dxP = pointer.x - p1.x;
                     let dyP = pointer.y - p1.y;
@@ -159,18 +146,52 @@
                     }
                 }
 
-                // 运动学更新：极化流体阻尼
                 p1.vx = (p1.vx + fx * forceFactor) * friction;
                 p1.vy = (p1.vy + fy * forceFactor) * friction;
             }
 
-            // 更新坐标
             for (let i = 0; i < numParticles; i++) {
                 let p = particles[i];
                 p.x += p.vx; p.y += p.vy;
 
-                // 边界包裹
                 if (p.x < 0) p.x += width;
                 if (p.x > width) p.x -= width;
                 if (p.y < 0) p.y += height;
-         
+                if (p.y > height) p.y -= height;
+            }
+        }
+
+        function draw() {
+            ctx.globalCompositeOperation = 'source-over';
+            ctx.fillStyle = 'rgba(5, 5, 8, 0.25)';
+            ctx.fillRect(0, 0, width, height);
+
+            ctx.globalCompositeOperation = 'lighter';
+            for (let i = 0; i < numParticles; i++) {
+                let p = particles[i];
+                
+                ctx.fillStyle = colors[p.type];
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, 2, 0, Math.PI * 2);
+                ctx.fill();
+
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, 6, 0, Math.PI * 2);
+                ctx.fillStyle = colors[p.type] + '11'; 
+                ctx.fill();
+            }
+        }
+
+        function loop() {
+            update();
+            draw();
+            requestAnimationFrame(loop);
+        }
+
+        document.getElementById('randomizeBtn').addEventListener('click', () => initSystem(false));
+
+        initSystem(true);
+        loop();
+    </script>
+</body>
+</html>
