@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Generative Art Lab | 生成艺术实验室</title>
+    <style>
+        body { 
+            margin: 0; 
+            padding: 0; 
+            background: #050505; 
+            color: #eee; 
+            font-family: 'Helvetica Neue', Helvetica, monospace; 
+            overflow: hidden; 
+        }
+        
+        /* 顶部导航栏 / 控制台UI */
+        header {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 60px;
+            background: rgba(10, 10, 10, 0.8);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 20px;
+            box-sizing: border-box;
+            z-index: 100;
+        }
+
+        .brand {
+            font-size: 14px;
+            letter-spacing: 2px;
+            font-weight: bold;
+            color: #fff;
+            text-shadow: 0 0 10px rgba(255,255,255,0.3);
+        }
+
+        .brand span {
+            color: #00ffcc;
+        }
+
+        .nav-buttons {
+            display: flex;
+            gap: 15px;
+        }
+
+        button {
+            background: transparent;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            color: rgba(255, 255, 255, 0.6);
+            padding: 8px 16px;
+            font-size: 12px;
+            letter-spacing: 1px;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-family: monospace;
+        }
+
+        button:hover {
+            border-color: #00ffcc;
+            color: #00ffcc;
+            background: rgba(0, 255, 204, 0.1);
+        }
+
+        button.active {
+            border-color: #ff3366;
+            color: #ff3366;
+            background: rgba(255, 51, 102, 0.1);
+            box-shadow: 0 0 10px rgba(255, 51, 102, 0.2);
+        }
+
+        /* 核心展示区 iframe */
+        #viewport {
+            position: absolute;
+            top: 60px; /* 留出 header 的高度 */
+            left: 0;
+            width: 100vw;
+            height: calc(100vh - 60px);
+            border: none;
+            background: #000;
+        }
+
+        /* 加载动画幕布 */
+        #loader {
+            position: absolute;
+            top: 60px;
+            left: 0;
+            width: 100%;
+            height: calc(100vh - 60px);
+            background: #050505;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 50;
+            color: #00ffcc;
+            font-family: monospace;
+            font-size: 14px;
+            letter-spacing: 3px;
+            transition: opacity 0.5s ease;
+            pointer-events: none;
+        }
+
+        /* 移动端适配 */
+        @media (max-width: 768px) {
+            header {
+                flex-direction: column;
+                height: auto;
+                padding: 10px;
+            }
+            .brand { margin-bottom: 10px; }
+            .nav-buttons {
+                flex-wrap: wrap;
+                justify-content: center;
+                gap: 8px;
+            }
+            #viewport, #loader {
+                top: 100px;
+                height: calc(100vh - 100px);
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <header>
+        <div class="brand">GENERATIVE <span>ART LAB</span> // 01</div>
+        <div class="nav-buttons">
+            <button onclick="loadModel('model-life.html', this)" class="active">PARTICLE LIFE</button>
+            <button onclick="loadModel('model-tree.html', this)">L-SYSTEM</button>
+            <button onclick="loadModel('model-turing.html', this)">TURING PATTERN</button>
+            <button onclick="loadModel('model-clifford.html', this)">CLIFFORD FLUID</button>
+        </div>
+    </header>
+
+    <div id="loader">INITIALIZING KERNEL...</div>
+    
+    <!-- 默认加载第一个模型 -->
+    <iframe id="viewport" src="model-life.html"></iframe>
+
+    <script>
+        const iframe = document.getElementById('viewport');
+        const loader = document.getElementById('loader');
+
+        // 监听 iframe 加载完成事件，隐藏 loading
+        iframe.addEventListener('load', () => {
+            loader.style.opacity = '0';
+        });
+
+        function loadModel(url, btnElement) {
+            // 显示 loading 幕布
+            loader.style.opacity = '1';
+            loader.innerText = 'COMPILING ALGORITHM...';
+
+            // 更新导航按钮的高亮状态
+            const buttons = document.querySelectorAll('.nav-buttons button');
+            buttons.forEach(btn => btn.classList.remove('active'));
+            btnElement.classList.add('active');
+
+            // 延迟极短的时间以确保 loading 动画生效，然后切换 iframe 源
+            setTimeout(() => {
+                iframe.src = url;
+            }, 50);
+        }
+    </script>
+</body>
+</html>
+
