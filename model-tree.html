@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>互动 L-System 变异植物</title>
+    <style>
+        body { margin: 0; overflow: hidden; background: #0a0a0a; }
+        canvas { display: block; }
+        #info { position: absolute; bottom: 20px; left: 20px; color: #00ffcc; font-family: monospace; pointer-events: none; }
+    </style>
+</head>
+<body>
+    <div id="info">交互：移动鼠标或滑动触摸以改变拓扑基因<br>ANGLE: <span id="ang"></span> | SCALE: <span id="sca"></span></div>
+    <canvas id="treeCanvas"></canvas>
+    <script>
+        const canvas = document.getElementById('treeCanvas');
+        const ctx = canvas.getContext('2d');
+        const angDisp = document.getElementById('ang');
+        const scaDisp = document.getElementById('sca');
+        
+        let width = canvas.width = window.innerWidth;
+        let height = canvas.height = window.innerHeight;
+        
+        let mouseX = width / 2;
+        let mouseY = height / 2;
+        let time = 0;
+
+        window.addEventListener('mousemove', e => { mouseX = e.clientX; mouseY = e.clientY; });
+        window.addEventListener('touchmove', e => { mouseX = e.touches[0].clientX; mouseY = e.touches[0].clientY; e.preventDefault(); }, {passive: false});
+        window.addEventListener('resize', () => { width = canvas.width = window.innerWidth; height = canvas.height = window.innerHeight; });
+
+        function drawBranch(len, depth) {
+            // 绘制当前树枝
+            ctx.beginPath();
+            ctx.moveTo(0, 0);
+            ctx.lineTo(0, -len);
+            ctx.stroke();
+            ctx.translate(0, -len); // 将坐标系移动到树枝末端
+
+            if (depth === 0) return; // 递归终止条件
+
+            // 交互映射：鼠标 X 轴控制分叉角度，Y 轴控制子枝干缩放比例
+            const maxAngle = (mouseX / width) * Math.PI; 
+            const branchScale = 0.4 + (mouseY / height) * 0.35;
+            
+            // 引入时间变量模拟微风吹拂的有机感
+            const wind = Math.sin(time + depth) * 0.05;
+
+            // 绘制右侧分支
+            ctx.save();
+            ctx.rotate(maxAngle + wind);
+            // 颜色随深度变化，产生生物发光质感
+            ctx.strokeStyle = `hsl(${depth * 25 + time * 50}, 100%, 60%)`;
+            ctx.lineWidth = depth * 0.8;
+            drawBranch(len * branchScale, depth - 1);
+            ctx.restore();
+
+            // 绘制左侧分支
+            ctx.save();
+            ctx.rotate(-maxAngle + wind);
+            ctx.strokeStyle = `hsl(${depth * 25 + time * 50 + 120}, 100%, 60%)`;
+            ctx.lineWidth = depth * 0.8;
+            drawBranch(len * branchScale, depth - 1);
+            ctx.restore();
+        }
+
+        function render() {
+            ctx.fillStyle = 'rgba(10, 10, 10, 0.3)'; // 动态残影
+            ctx.fillRect(0, 0, width, height);
+
+            angDisp.innerText = ((mouseX / width) * 180).toFixed(1) + '°';
+            scaDisp.innerText = (0.4 + (mouseY / height) * 0.35).toFixed(2);
+
+            ctx.save();
+            ctx.translate(width / 2, height); // 将根部定在屏幕底部中央
+            ctx.strokeStyle = '#fff';
+            ctx.lineWidth = 10;
+            drawBranch(height * 0.3, 10); // 10次递归迭代
+            ctx.restore();
+
+            time += 0.02;
+            requestAnimationFrame(render);
+        }
+        render();
+    </script>
+</body>
+</html>
+
