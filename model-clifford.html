@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Clifford Attractor - Structural Mutation</title>
+    <style>
+        body { margin: 0; overflow: hidden; background: #000; font-family: 'Helvetica Neue', Helvetica, sans-serif; touch-action: none; }
+        canvas { display: block; width: 100vw; height: 100vh; }
+        #ui { position: absolute; bottom: 30px; left: 30px; color: rgba(255,255,255,0.7); font-size: 11px; letter-spacing: 2px; pointer-events: none; text-transform: uppercase; line-height: 1.8; text-shadow: 0 1px 4px #000; }
+        .data { color: #00ffcc; font-weight: bold; font-family: monospace; font-size: 13px; }
+        .warning { color: #ff3366; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <div id="ui">
+        CLIFFORD MANIFOLD // PURE STRUCTURAL MATH<br>
+        TIMELINE: <span id="valTimeline" class="data"></span> | MUTATION: <span id="valMut" class="data"></span><br>
+        <span id="status">INTERACTION: DRAG X TO SCRUB TIME / Y TO MUTATE</span>
+    </div>
+    <canvas id="canvas"></canvas>
+
+    <script>
+        const canvas = document.getElementById('canvas');
+        const uiTimeline = document.getElementById('valTimeline');
+        const uiMut = document.getElementById('valMut');
+        const uiStatus = document.getElementById('status');
+
+        const genes = [
+            { a: -1.4, b: 1.6, c: 1.0, d: 0.7 },
+            { a: 1.7, b: 1.7, c: 0.6, d: 1.2 },
+            { a: -1.7, b: 1.8, c: -1.9, d: -0.4 },
+            { a: 1.2, b: -1.2, c: 1.0, d: 0.9 },
+            { a: -1.8, b: -2.0, c: -0.5, d: -0.9 },
+            { a: 1.4, b: -0.8, c: 1.2, d: -0.8 }
+        ];
+
+        let playhead = 0;
+        let mutation = 0;
+        let isInteracting = false;
+        let lastTouchX = 0, lastTouchY = 0;
+
+        const BATCH_SIZE = 250000; 
+        const pointData = new Float32Array(BATCH_SIZE * 2);
+        let mathX = 0.1, mathY = 0.1;
+
+        let gl = canvas.getContext('webgl', { alpha: false, antialias: false });
+        let width, height;
+
+        function resize() {
+            width = canvas.width = window.innerWidth;
+            height = canvas.height = window.innerHeight;
+            gl.viewport(0, 0, width, height);
+        }
+        window.addEventListener('resize', resize);
+        resize();
+
+        const vs = gl.createShader(gl.VERTEX_SHADER);
+        gl.shaderSource(vs, `
+            attribute vec2 a_position;
+            void main() {
+                gl_Position = vec4(a_position, 0.0, 1.0);
+                gl_PointSize = 1.0;
+            }
+        `);
+        gl.compileShader(vs);
+
+        const fs = gl.createShader(gl.FRAGMENT_SHADER);
+        gl.shaderSource(fs, `
+            precision lowp float;
+            void main() { gl_FragColor = vec4(0.05, 0.35, 0.75, 0.04); }
+        `);
+        gl.compileShader(fs);
+
+        const shaderProgram = gl.createProgram();
+        gl.attachShader(shaderProgram, vs);
+        gl.attachShader(shaderProgram, fs);
+        gl.linkProgram(shaderProgram);
+        const positionLocation = gl.getAttribLocation(shaderProgram, "a_position");
+        const pointBuffer = gl.createBuffer();
+
+        function handleDown(x, y) {
+            isInteracting = true;
+            lastTouchX = x;
+            lastTouchY = y;
+            uiStatus.innerText = "MANUAL OVERRIDE: SCRUBBING & MUTATING";
+            uiStatus.style.color = "#ff3366";
+        }
+
+        function handleMove(x, y) {
+            if (!isInteracting) return;
+            const dx = x - lastTouchX;
+            const dy = y - lastTouchY;
+            
+            playhead -= dx * 0.005; 
+            mutation += dy * 0.005;
+            mutation = Math.max(-1.5, Math.min(1.5, mutation));
+            
+            lastTouchX = x;
+            lastTouchY = y;
+        }
+
+        function handleUp() {
+            isInteracting = false;
+            uiStatus.innerText = "INTERACTION: DRAG X TO SCRUB TIME / Y TO MUTATE";
+            uiStatus.style.color = "rgba(255,255,255,0.7)";
+        }
+
+        window.addEventListener('mousedown', (e) => handleDown(e.clientX, e.clientY));
+        window.addEventListener('mousemove', (e) => handleMove(e.clientX, e.clientY));
+        window.addEventListener('mouseup', handleUp);
+        window.addEventListener('touchstart', (e) => { handleDown(e.touches[0].clientX, e.touches[0].clientY); e.preventDefault(); }, {passive: false});
+        window.addEventListener('touchmove', (e) => { handleMove(e.touches[0].clientX, e.touches[0].clientY); e.preventDefault(); }, {passive: false});
+        window.addEventListener('touchend', handleUp);
+
+        function lerp(start, end, t) { return start * (1 - t) + end * t; }
+        function smoothstep(t) { return t * t * (3.0 - 2.0 * t); }
+
+        function render() {
+            if (!isInteracting) {
+                playhead += 0.002;
+                mutation *= 0.95;
+            }
+
+            const len = genes.length;
+            const wrappedPlayhead = ((playhead % len) + len) % len;
+            const idx1 = Math.floor(wrappedPlayhead);
+            const idx2 = (idx1 + 1) % len;
+            const t = smoothstep(wrappedPlayhead - idx1);
+
+            let a = lerp(genes[idx1].a, genes[idx2].a, t);
+            let b = lerp(genes[idx1].b, genes[idx2].b, t);
+            let c = lerp(genes[idx1].c, genes[idx2].c, t);
+            let d = lerp(genes[idx1].d, genes[idx2].d, t);
+
+            c += mutation;
+            d -= mutation * 0.5;
+
+            uiTimeline.innerText = ((wrappedPlayhead / len) * 100).toFixed(1) + "%";
+            uiMut.innerText = mutation.toFixed(3);
+
+            const scale = 0.23; 
+            const aspect = width / height;
+
+            let minX = 999, maxX = -999;
+
+            for (let i = 0; i < BATCH_SIZE; i++) {
+                let nx = Math.sin(a * mathY) + c * Math.cos(a * mathX);
+                let ny = Math.sin(b * mathX) + d * Math.cos(b * mathY);
+                mathX = nx;
+                mathY = ny;
+                
+                if (mathX < minX) minX = mathX;
+                if (mathX > maxX) maxX = mathX;
+
+                pointData[i * 2] = (mathX + (Math.random()-0.5)*0.01) * scale;
+                pointData[i * 2 + 1] = (mathY + (Math.random()-0.5)*0.01) * scale * aspect; 
+            }
+
+            if (maxX - minX < 0.2) {
+                playhead += 0.05;
+                uiStatus.innerText = "AUTO-CORRECTING TOPOLOGICAL COLLAPSE...";
+                uiStatus.style.color = "#ffaa00";
+            }
+
+            gl.clearColor(0.0, 0.0, 0.0, 1.0);
+            gl.clear(gl.COLOR_BUFFER_BIT);
+
+            gl.useProgram(shaderProgram);
+            gl.bindBuffer(gl.ARRAY_BUFFER, pointBuffer);
+            gl.bufferData(gl.ARRAY_BUFFER, pointData, gl.DYNAMIC_DRAW); 
+            gl.enableVertexAttribArray(positionLocation);
+            gl.vertexAttribPointer(positionLocation, 2, gl.FLOAT, false, 0, 0);
+            
+            gl.enable(gl.BLEND);
+            gl.blendFunc(gl.SRC_ALPHA, gl.ONE); 
+            gl.drawArrays(gl.POINTS, 0, BATCH_SIZE);
+
+            requestAnimationFrame(render);
+        }
+
+        render();
+    </script>
+</body>
+</html>
+
