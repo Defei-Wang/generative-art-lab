@@ -23,10 +23,10 @@
     <script>
         const canvas = document.getElementById('lifeCanvas');
         const ctx = canvas.getContext('2d');
-        let width, height;
+        let width = 0, height = 0;
 
         const numTypes = 4;        
-        const numParticles = 900;
+        const numParticles = 450;  // 适配移动端性能，维持 60 帧
         const friction = 0.55;
         const rMax = 70;
         const rMin = 18;
@@ -38,9 +38,10 @@
 
         let pointer = { x: -1000, y: -1000, active: false };
 
+        // 兼容 iframe 的容器尺寸测量
         function resize() {
-            width = canvas.width = window.innerWidth;
-            height = canvas.height = window.innerHeight;
+            width = canvas.width = window.innerWidth || document.documentElement.clientWidth || 400;
+            height = canvas.height = window.innerHeight || document.documentElement.clientHeight || 600;
         }
         window.addEventListener('resize', resize);
         resize();
@@ -89,8 +90,8 @@
             particles = [];
             for (let i = 0; i < numParticles; i++) {
                 particles.push({
-                    x: Math.random() * width,
-                    y: Math.random() * height,
+                    x: Math.random() * (width > 0 ? width : 400),
+                    y: Math.random() * (height > 0 ? height : 600),
                     vx: 0, vy: 0,
                     type: Math.floor(Math.random() * numTypes)
                 });
@@ -109,6 +110,8 @@
         }
 
         function update() {
+            if (width === 0 || height === 0) resize();
+
             for (let i = 0; i < numParticles; i++) {
                 let p1 = particles[i];
                 let fx = 0, fy = 0;
