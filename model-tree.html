@@ -3,12 +3,12 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>互动 L-System - 极致锐度与视口校准版</title>
+    <title>互动 L-System - 极限锐度稳定版</title>
     <style>
         body { 
             margin: 0; 
             overflow: hidden; 
-            background: #000; 
+            background: #020202; 
             touch-action: none; 
             width: 100vw; 
             height: 100vh; 
@@ -18,56 +18,55 @@
             width: 100%; 
             height: 100%; 
         }
-        /* 避开手机底部手势条与虚拟按键 */
-        #info { 
-            position: absolute; 
-            bottom: 75px; 
-            left: 15px; 
-            color: #00ffcc; 
-            font-family: monospace; 
-            pointer-events: none; 
-            font-size: 11px; 
-            line-height: 1.7;
-            text-shadow: 0 1px 4px #000;
+        /* 将控制栏调整至安全可视区域 */
+        #hud-top {
+            position: absolute;
+            top: 15px;
+            left: 15px;
+            color: #00ffcc;
+            font-family: monospace;
+            font-size: 11px;
+            line-height: 1.6;
+            pointer-events: none;
+            text-shadow: 0 1px 3px #000;
             z-index: 10;
         }
-        .hud-panel {
+        #hud-bottom {
             position: absolute;
-            bottom: 75px;
+            bottom: 40px;
             right: 15px;
             display: flex;
             gap: 8px;
             z-index: 20;
         }
         button {
-            background: rgba(15, 15, 20, 0.8);
-            border: 1px solid rgba(255, 255, 255, 0.25);
-            color: #eee;
-            padding: 7px 10px;
-            font-size: 10px;
+            background: rgba(15, 18, 22, 0.85);
+            border: 1px solid rgba(0, 255, 204, 0.4);
+            color: #00ffcc;
+            padding: 7px 12px;
+            font-size: 11px;
             font-family: monospace;
             border-radius: 4px;
             cursor: pointer;
             backdrop-filter: blur(4px);
-            transition: all 0.2s;
         }
-        button:active { background: rgba(255, 255, 255, 0.2); }
+        button:active { background: rgba(0, 255, 204, 0.25); }
         button.active {
-            border-color: #00ffcc;
-            color: #00ffcc;
-            background: rgba(0, 255, 204, 0.15);
+            border-color: #ff3366;
+            color: #ff3366;
+            background: rgba(255, 51, 102, 0.2);
         }
     </style>
 </head>
 <body>
-    <div id="info">
-        L-SYSTEM // VECTOR PRECISION ENGINE<br>
-        模式: <span id="uiMode" style="color:#00ffcc">单指形态变异</span><br>
-        ZOOM: <span id="uiZoom"></span> | LINES: <span id="uiDepth"></span>
+    <div id="hud-top">
+        L-SYSTEM // VECTOR ENGINE<br>
+        状态: <span id="uiMode">单指调节形态</span><br>
+        ZOOM: <span id="uiZoom">1.00x</span> | BRANCHES: <span id="uiLines">1024</span>
     </div>
-    <div class="hud-panel">
+    <div id="hud-bottom">
         <button id="lockBtn" onclick="toggleLock()">[ 锁定形态 ]</button>
-        <button onclick="resetCamera()">[ 归位 ]</button>
+        <button onclick="resetCamera()">[ 视角复位 ]</button>
     </div>
     <canvas id="treeCanvas"></canvas>
 
@@ -75,16 +74,15 @@
         const canvas = document.getElementById('treeCanvas');
         const ctx = canvas.getContext('2d', { alpha: false });
         const uiZoom = document.getElementById('uiZoom');
-        const uiDepth = document.getElementById('uiDepth');
+        const uiLines = document.getElementById('uiLines');
         const uiMode = document.getElementById('uiMode');
         const lockBtn = document.getElementById('lockBtn');
-        
+
         let width = 0, height = 0;
-        let dpr = 1;
 
         // 形态参数
-        let targetAngle = 0.45; 
-        let targetScale = 0.65; 
+        let targetAngle = 0.45;
+        let targetScale = 0.65;
         let curAngle = targetAngle;
         let curScale = targetScale;
         let normX = 0.3, normY = 0.5;
@@ -93,85 +91,70 @@
         let camX = 0, camY = 0;
         let zoom = 1.0;
         let isLocked = false;
-        let isInitialized = false;
 
-        // 手势状态
-        let touchIntentTimer = null;
+        // 触控交互状态
         let lastPinchDist = 0;
         let lastPinchCenter = { x: 0, y: 0 };
-        let singleTouchStartPos = { x: 0, y: 0 };
+        let singleTouchPos = { x: 0, y: 0 };
+        let touchTimer = null;
         let time = 0;
 
-        function resize() {
-            width = window.innerWidth;
-            height = window.innerHeight;
-            
-            // 性能与锐度平衡：限制在 1.5\~1.8 倍 DPR，消除卡顿同时确保视网膜级锐度
-            dpr = Math.min(window.devicePixelRatio || 1, 1.8);
-            canvas.width = Math.floor(width * dpr);
-            canvas.height = Math.floor(height * dpr);
-            canvas.style.width = width + 'px';
-            canvas.style.height = height + 'px';
-
-            // 无论全屏还是非全屏切换，始终自动保持画面居中于视口
-            if (!isInitialized) {
-                resetCamera();
-                isInitialized = true;
-            } else {
-                camX = width / 2;
-                camY = height - 30;
-            }
-        }
-        window.addEventListener('resize', resize);
-        resize();
-
-        window.resetCamera = function() {
+        // 视角复位函数（函数提升保障）
+        function resetCamera() {
             camX = width / 2;
-            camY = height - 30;
+            camY = height - 60;
             zoom = 1.0;
-        };
+        }
 
-        window.toggleLock = function() {
+        function toggleLock() {
             isLocked = !isLocked;
             if (isLocked) {
                 lockBtn.classList.add('active');
                 lockBtn.innerText = '[ 已锁定 ]';
-                uiMode.innerText = '漫游模式 (单指平移/双指缩放)';
-                uiMode.style.color = '#ffaa00';
+                uiMode.innerText = '漫游视角 (单指拖拽/双指缩放)';
+                uiMode.style.color = '#ff3366';
             } else {
                 lockBtn.classList.remove('active');
                 lockBtn.innerText = '[ 锁定形态 ]';
-                uiMode.innerText = '单指形态变异';
+                uiMode.innerText = '单指调节形态';
                 uiMode.style.color = '#00ffcc';
             }
-        };
+        }
+
+        function resize() {
+            width = canvas.width = window.innerWidth;
+            height = canvas.height = window.innerHeight;
+            if (camX === 0 && camY === 0) {
+                resetCamera();
+            } else {
+                camX = width / 2;
+                camY = height - 60;
+            }
+        }
+        window.addEventListener('resize', resize);
 
         function updateTopology(clientX, clientY) {
             normX = Math.min(Math.max(clientX / width, 0.0), 1.0);
             normY = 1.0 - Math.min(Math.max(clientY / height, 0.05), 0.95);
-            targetAngle = 0.02 + normX * Math.PI * 0.85; 
-            targetScale = 0.48 + normY * 0.28 + normX * 0.04; 
+            targetAngle = 0.02 + normX * Math.PI * 0.85;
+            targetScale = 0.46 + normY * 0.28 + normX * 0.04;
         }
 
-        // 电脑滚轮缩放 (以光标为中心)
+        // 电脑滚轮缩放
         window.addEventListener('wheel', (e) => {
             e.preventDefault();
-            const zoomFactor = e.deltaY > 0 ? 0.85 : 1.15;
-            const newZoom = Math.max(0.3, Math.min(zoom * zoomFactor, 35.0));
-            const actualFactor = newZoom / zoom;
-            
-            camX = e.clientX - (e.clientX - camX) * actualFactor;
-            camY = e.clientY - (e.clientY - camY) * actualFactor;
-            zoom = newZoom;
-        }, {passive: false});
+            const factor = e.deltaY > 0 ? 0.88 : 1.14;
+            const nextZoom = Math.max(0.3, Math.min(zoom * factor, 30.0));
+            const ratio = nextZoom / zoom;
+            camX = e.clientX - (e.clientX - camX) * ratio;
+            camY = e.clientY - (e.clientY - camY) * ratio;
+            zoom = nextZoom;
+        }, { passive: false });
 
-        // 触控防抖与双指隔离
+        // 移动端多指交互隔离
         window.addEventListener('touchstart', (e) => {
             if (e.touches.length === 2) {
-                if (touchIntentTimer) {
-                    clearTimeout(touchIntentTimer);
-                    touchIntentTimer = null;
-                }
+                if (touchTimer) clearTimeout(touchTimer);
                 lastPinchDist = Math.hypot(
                     e.touches[0].clientX - e.touches[1].clientX,
                     e.touches[0].clientY - e.touches[1].clientY
@@ -181,75 +164,61 @@
                     y: (e.touches[0].clientY + e.touches[1].clientY) / 2
                 };
             } else if (e.touches.length === 1) {
-                singleTouchStartPos = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+                singleTouchPos = { x: e.touches[0].clientX, y: e.touches[0].clientY };
                 if (!isLocked) {
-                    touchIntentTimer = setTimeout(() => {
-                        updateTopology(singleTouchStartPos.x, singleTouchStartPos.y);
-                        touchIntentTimer = null;
-                    }, 60);
+                    touchTimer = setTimeout(() => {
+                        updateTopology(singleTouchPos.x, singleTouchPos.y);
+                    }, 50);
                 }
             }
-        }, {passive: false});
+        }, { passive: false });
 
-        window.addEventListener('touchmove', (e) => { 
-            e.preventDefault(); 
+        window.addEventListener('touchmove', (e) => {
+            e.preventDefault();
             if (e.touches.length === 2) {
-                if (touchIntentTimer) {
-                    clearTimeout(touchIntentTimer);
-                    touchIntentTimer = null;
-                }
+                if (touchTimer) clearTimeout(touchTimer);
                 const currentCenter = {
                     x: (e.touches[0].clientX + e.touches[1].clientX) / 2,
                     y: (e.touches[0].clientY + e.touches[1].clientY) / 2
                 };
-                
                 camX += (currentCenter.x - lastPinchCenter.x);
                 camY += (currentCenter.y - lastPinchCenter.y);
-                
-                const currDist = Math.hypot(
+
+                const currentDist = Math.hypot(
                     e.touches[0].clientX - e.touches[1].clientX,
                     e.touches[0].clientY - e.touches[1].clientY
                 );
-                
-                if (lastPinchDist > 0) {
-                    const zoomFactor = currDist / lastPinchDist;
-                    const newZoom = Math.max(0.3, Math.min(zoom * zoomFactor, 35.0));
-                    const actualFactor = newZoom / zoom;
-                    
-                    camX = currentCenter.x - (currentCenter.x - camX) * actualFactor;
-                    camY = currentCenter.y - (currentCenter.y - camY) * actualFactor;
-                    zoom = newZoom;
-                }
-                
-                lastPinchDist = currDist;
-                lastPinchCenter = currentCenter;
 
+                if (lastPinchDist > 0) {
+                    const factor = currentDist / lastPinchDist;
+                    const nextZoom = Math.max(0.3, Math.min(zoom * factor, 30.0));
+                    const ratio = nextZoom / zoom;
+                    camX = currentCenter.x - (currentCenter.x - camX) * ratio;
+                    camY = currentCenter.y - (currentCenter.y - camY) * ratio;
+                    zoom = nextZoom;
+                }
+                lastPinchDist = currentDist;
+                lastPinchCenter = currentCenter;
             } else if (e.touches.length === 1) {
                 if (isLocked) {
-                    camX += (e.touches[0].clientX - singleTouchStartPos.x);
-                    camY += (e.touches[0].clientY - singleTouchStartPos.y);
-                    singleTouchStartPos = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+                    camX += (e.touches[0].clientX - singleTouchPos.x);
+                    camY += (e.touches[0].clientY - singleTouchPos.y);
+                    singleTouchPos = { x: e.touches[0].clientX, y: e.touches[0].clientY };
                 } else {
-                    if (!touchIntentTimer) {
-                        updateTopology(e.touches[0].clientX, e.touches[0].clientY);
-                    }
+                    updateTopology(e.touches[0].clientX, e.touches[0].clientY);
                 }
             }
-        }, {passive: false});
+        }, { passive: false });
 
-        window.addEventListener('touchend', () => {
-            if (touchIntentTimer) {
-                clearTimeout(touchIntentTimer);
-                touchIntentTimer = null;
-            }
+        window.addEventListener('mousemove', (e) => {
+            if (e.buttons === 1) updateTopology(e.clientX, e.clientY);
+            else if (e.buttons === 0 && !('ontouchstart' in window)) updateTopology(e.clientX, e.clientY);
         });
 
-        // 递归绘制：绝对细线逆补偿算法
+        // 递归渲染核心
         function drawBranch(len, depth) {
             if (depth <= 0) return;
-
-            // 物理像素剔除阈值：小于屏幕物理半像素不画，削减开销
-            if (len * zoom * dpr < 0.5) return; 
+            if (len * zoom < 0.4) return; // 视网膜阈值剔除，保障帧率
 
             ctx.beginPath();
             ctx.moveTo(0, 0);
@@ -258,15 +227,11 @@
             ctx.translate(0, -len);
 
             const wind = Math.sin(time + depth * 0.4) * 0.015;
-            const hue = depth * 22 + time * 30;
+            const hue = depth * 24 + time * 25;
 
-            // 核心修复：线宽必须按全局 zoom 进行严格反向缩减！
-            // 确保放大 10 倍后，线条依旧保持 0.5px 的纤细感，绝不变成粗管大白块
-            const branchWidth = Math.max((depth * 0.28 + 0.1) / zoom, 0.4 / zoom);
-            ctx.lineWidth = branchWidth;
-
-            // 柔和发光透明度，防止多层叠死成白色光团
-            ctx.strokeStyle = `hsla(${hue}, 100%, 65%, 0.85)`;
+            // 核心修复：线宽随深度减小，并严格除以 zoom 保持发丝级细度，消除大白块
+            ctx.lineWidth = Math.max(0.6 / zoom, (len * 0.035));
+            ctx.strokeStyle = `hsl(${hue}, 100%, 65%)`;
 
             ctx.save();
             ctx.rotate(curAngle + wind);
@@ -275,7 +240,7 @@
 
             ctx.save();
             ctx.rotate(-curAngle + wind);
-            ctx.strokeStyle = `hsla(${hue + 90}, 100%, 65%, 0.85)`;
+            ctx.strokeStyle = `hsl(${hue + 90}, 100%, 65%)`;
             drawBranch(len * curScale, depth - 1);
             ctx.restore();
         }
@@ -284,43 +249,41 @@
             curAngle += (targetAngle - curAngle) * 0.08;
             curScale += (targetScale - curScale) * 0.08;
 
-            // 动态控制递归层级，锁死上限防止 CPU 阻塞
-            let zoomBonus = Math.floor(Math.max(0, Math.log2(zoom)));
-            let currentDepth = Math.floor(9 + normX * 2) + zoomBonus;
-            currentDepth = Math.min(currentDepth, 13); // 13级 (8192根线) 是移动端流畅极值
+            const baseDepth = 10;
+            const zoomBonus = Math.floor(Math.max(0, Math.log2(zoom)));
+            const currentDepth = Math.min(baseDepth + zoomBonus, 12); // 控制在 10\~12 层，维持 60 帧
 
-            // 清屏
+            // 基础清屏
             ctx.save();
             ctx.setTransform(1, 0, 0, 1, 0, 0);
-            ctx.globalCompositeOperation = 'source-over';
-            ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            ctx.fillStyle = 'rgba(2, 2, 3, 0.4)';
+            ctx.fillRect(0, 0, width, height);
             ctx.restore();
 
             uiZoom.innerText = zoom.toFixed(2) + 'x';
-            uiDepth.innerText = Math.pow(2, currentDepth);
+            uiLines.innerText = Math.pow(2, currentDepth);
 
             // 摄像机视口变换
             ctx.save();
-            ctx.scale(dpr, dpr);
             ctx.translate(camX, camY);
             ctx.scale(zoom, zoom);
 
-            // 避免粗糙过曝：使用 round 连接与端点，取消全白覆盖
-            ctx.globalCompositeOperation = 'lighter';
-            ctx.lineCap = 'round';
-            ctx.lineJoin = 'round';
-            
-            const trunkLen = Math.min(height * 0.16, 125);
-            ctx.lineWidth = Math.max(2.5 / zoom, 0.8 / zoom);
-            ctx.strokeStyle = 'rgba(255, 255, 255, 0.9)';
-            drawBranch(trunkLen, currentDepth); 
+            // 核心修复：平角线端（butt），禁用发光重叠导致的死白模糊
+            ctx.lineCap = 'butt';
+            ctx.lineJoin = 'miter';
+
+            const trunkLen = Math.min(height * 0.16, 120);
+            drawBranch(trunkLen, currentDepth);
             ctx.restore();
 
             time += 0.015;
             requestAnimationFrame(render);
         }
+
+        // 初始化
+        resize();
         render();
     </script>
 </body>
 </html>
+
