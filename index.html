@@ -14,7 +14,6 @@
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, monospace;
         }
 
-        /* 顶部自适应导航容器 */
         header {
             position: fixed;
             top: 0;
@@ -41,7 +40,6 @@
             white-space: nowrap;
         }
 
-        /* 支持横向触控滑动的标签栏 */
         .nav-scroller {
             display: flex;
             gap: 8px;
@@ -76,7 +74,6 @@
             box-shadow: 0 0 10px rgba(255, 51, 102, 0.2);
         }
 
-        /* 渲染主视口 */
         #viewport {
             width: 100vw;
             height: 100vh;
@@ -95,24 +92,35 @@
     <iframe id="viewport" allow="accelerometer; camera; gyroscope; microphone"></iframe>
 
     <script>
-        // ============================================================
-        // 核心配置注册表：后续新增文件只需在此数组中增加一项，无需修改 HTML！
-        // ============================================================
-        const CONFIG_MODELS = [
-            { id: 'life',     name: 'PARTICLE LIFE',  file: 'model-life.html' },
-            { id: 'tree',     name: 'L-SYSTEM',       file: 'model-tree.html' },
-            { id: 'turing',   name: 'TURING PATTERN', file: 'model-turing.html' },
-            { id: 'clifford', name: 'CLIFFORD FLUID', file: 'model-clifford.html' }
-            // 后续加入新实验，直接在下方追加，例如：
-            // { id: 'fluid', name: 'NAVIER STOKES', file: 'model-fluid.html' },
+        // 配置仓库所属主体与仓库名称
+        const GITHUB_OWNER = 'defei-wang';
+        const GITHUB_REPO = 'generative-art-lab';
+
+        // 知名模型的友好名称映射表（未匹配的文件名将自动转大写作为按钮名）
+        const NAME_MAPPING = {
+            'life': 'PARTICLE LIFE',
+            'tree': 'L-SYSTEM',
+            'turing': 'TURING PATTERN',
+            'clifford': 'CLIFFORD FLUID',
+            'physarum': 'PHYSARUM SLIME'
+        };
+
+        // 本地保底列表（在 API 限流或无网络时启用）
+        const FALLBACK_MODELS = [
+            { id: 'life',     name: 'PARTICLE LIFE',   file: 'model-life.html' },
+            { id: 'tree',     name: 'L-SYSTEM',        file: 'model-tree.html' },
+            { id: 'turing',   name: 'TURING PATTERN',  file: 'model-turing.html' },
+            { id: 'clifford', name: 'CLIFFORD FLUID',  file: 'model-clifford.html' },
+            { id: 'physarum', name: 'PHYSARUM SLIME',  file: 'model-physarum.html' }
         ];
 
         const navContainer = document.getElementById('navContainer');
         const viewport = document.getElementById('viewport');
         const buttonsMap = new Map();
+        let loadedModels = [];
 
-        // 动态分发视口加载，强制携带时间戳摧毁缓存
         function switchModel(model, pushHash = true) {
+            // 追加时间戳穿透缓存
             viewport.src = model.file + '?t=' + Date.now();
 
             buttonsMap.forEach((btn, id) => {
@@ -124,27 +132,82 @@
             }
         }
 
-        // 自动构建导航界面
-        function buildInterface() {
+        function renderNav(models) {
+            loadedModels = models;
             navContainer.innerHTML = '';
-            
-            CONFIG_MODELS.forEach((model) => {
+            buttonsMap.clear();
+
+            models.forEach((model) => {
                 const btn = document.createElement('button');
                 btn.className = 'nav-btn';
                 btn.innerText = model.name;
                 btn.onclick = () => switchModel(model);
-                
                 navContainer.appendChild(btn);
                 buttonsMap.set(model.id, btn);
             });
 
-            // 支持 URL Hash 路由（例如通过域名访问 direct link: .../#turing）
             const hash = window.location.hash.replace('#', '');
-            const target = CONFIG_MODELS.find(m => m.id === hash) || CONFIG_MODELS[0];
-            switchModel(target, false);
+            const target = models.find(m => m.id === hash) || models[0];
+            if (target) switchModel(target, false);
         }
 
-        buildInterface();
+        async function fetchRepoModels() {
+            const apiUrl = `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents`;
+            const cacheKey = 'gal_models_cache';
+            const cacheTimeKey = 'gal_models_cache_time';
+            const now = Date.now();
+
+            // 优先读取 10 分钟内的本地存储缓存，避免快速消耗 API 额度
+            const cachedTime = localStorage.getItem(cacheTimeKey);
+            const cachedData = localStorage.getItem(cacheKey);
+            if (cachedTime && cachedData && now - Number(cachedTime) < 600000) {
+                try {
+                    const parsed = JSON.parse(cachedData);
+                    if (Array.isArray(parsed) && parsed.length > 0) {
+                        renderNav(parsed);
+                        return;
+                    }
+                } catch (e) {}
+            }
+
+            try {
+                const response = await fetch(apiUrl, {
+                    headers: { 'Accept': 'application/vnd.github.v3+json' }
+                });
+
+                if (!response.ok) {
+                    throw new Error(`GitHub API Status: ${response.status}`);
+                }
+
+                const contents = await response.json();
+                
+                // 筛选所有 model-*.html 文件
+                const dynamicModels = contents
+                    .filter(item => item.type === 'file' && /^model-.*\.html$/.test(item.name))
+                    .map(item => {
+                        const rawId = item.name.replace(/^model-/, '').replace(/\.html$/, '');
+                        return {
+                            id: rawId,
+                            name: NAME_MAPPING[rawId] || rawId.replace(/[-_]/g, ' ').toUpperCase(),
+                            file: item.name
+                        };
+                    });
+
+                if (dynamicModels.length > 0) {
+                    localStorage.setItem(cacheKey, JSON.stringify(dynamicModels));
+                    localStorage.setItem(cacheTimeKey, String(now));
+                    renderNav(dynamicModels);
+                    return;
+                }
+            } catch (err) {
+                console.warn('API 动态发现受限，回退至本地配置:', err.message);
+            }
+
+            // API 失败或限流时启用保底
+            renderNav(FALLBACK_MODELS);
+        }
+
+        fetchRepoModels();
     </script>
 </body>
 </html>
