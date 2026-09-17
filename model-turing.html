@@ -3,17 +3,16 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>图灵斑图 (Reaction-Diffusion) - 平板高分精准触控版</title>
+    <title>图灵斑图 (Reaction-Diffusion) - 零边界噪声版</title>
     <style>
         body { 
             margin: 0; 
             overflow: hidden; 
             background: #000; 
             touch-action: none; 
-            width: 100vw;
-            height: 100vh;
+            width: 100vw; 
+            height: 100vh; 
         }
-        /* 100% 贴合视口，彻底移除 object-fit，杜绝边缘投影错位 */
         canvas { 
             display: block; 
             width: 100vw; 
@@ -35,18 +34,16 @@
 </head>
 <body>
     <div id="ui">
-        TURING PATTERN // NATIVE RESOLUTION<br>
-        网格: <span id="uiGrid" class="highlight">0 x 0</span> (视口动态映射)<br>
-        交互: 手指涂抹注入物质 B，坐标 1:1 绝对校准
+        TURING PATTERN // NEUMANN BOUNDARY<br>
+        状态：<span class="highlight">零通量边界约束 / 微量软渗透</span><br>
+        交互：轻触屏幕划动，观察微观有机原纤平滑分裂
     </div>
     <canvas id="rdCanvas"></canvas>
 
     <script>
         const canvas = document.getElementById('rdCanvas');
         const ctx = canvas.getContext('2d', { alpha: false });
-        const uiGrid = document.getElementById('uiGrid');
 
-        // Gray-Scott 动力学参数
         const Da = 1.0;     
         const Db = 0.5;     
         const f = 0.0545;   
@@ -57,44 +54,40 @@
         let next = null;
         let imageData = null;
 
-        // 依据设备视口动态构建自适应网格系统
         function initSimulation() {
             const screenW = window.innerWidth;
             const screenH = window.innerHeight;
             const aspect = screenW / screenH;
 
-            // 保持物理短边基准分辨率为 280，长边按屏幕纵横比展开
             if (aspect >= 1.0) {
-                simH = 280;
-                simW = Math.round(280 * aspect);
+                simH = 260;
+                simW = Math.round(260 * aspect);
             } else {
-                simW = 280;
-                simH = Math.round(280 / aspect);
+                simW = 260;
+                simH = Math.round(260 / aspect);
             }
 
             canvas.width = simW;
             canvas.height = simH;
-            uiGrid.innerText = `${simW} x ${simH}`;
 
             const totalCells = simW * simH;
             grid = new Float32Array(totalCells * 2);
             next = new Float32Array(totalCells * 2);
             imageData = ctx.createImageData(simW, simH);
 
-            // 环境初始化：充满物质 A (1.0)
             for (let i = 0; i < totalCells; i++) {
                 grid[i * 2] = 1.0;
                 grid[i * 2 + 1] = 0.0;
             }
 
-            // 在几何中心生成物质 B 正圆初始核心
+            // 初始化中心种子
             const cx = Math.floor(simW / 2);
             const cy = Math.floor(simH / 2);
-            const seedR = 10;
+            const seedR = 8;
             for (let y = cy - seedR; y <= cy + seedR; y++) {
                 for (let x = cx - seedR; x <= cx + seedR; x++) {
                     if ((x - cx) ** 2 + (y - cy) ** 2 <= seedR * seedR) {
-                        grid[(y * simW + x) * 2 + 1] = 1.0;
+                        grid[(y * simW + x) * 2 + 1] = 0.8;
                     }
                 }
             }
@@ -103,15 +96,12 @@
         initSimulation();
         window.addEventListener('resize', initSimulation);
 
-        // 触控交互：坐标 1:1 绝对映射
         let pointer = { x: -100, y: -100, down: false };
 
         function updatePointer(e) {
             const rect = canvas.getBoundingClientRect();
             const clientX = e.touches ? e.touches[0].clientX : e.clientX;
             const clientY = e.touches ? e.touches[0].clientY : e.clientY;
-            
-            // 由于内部分辨率纵横比与 DOM 完全一致，纯线性映射消除任何边缘偏差
             pointer.x = Math.floor(((clientX - rect.left) / rect.width) * simW);
             pointer.y = Math.floor(((clientY - rect.top) / rect.height) * simH);
         }
@@ -133,23 +123,26 @@
         window.addEventListener('touchend', () => pointer.down = false);
 
         function evolve() {
-            // 物质安全注入
-            if (pointer.down && pointer.x > 6 && pointer.x < simW - 6 && pointer.y > 6 && pointer.y < simH - 6) {
-                const brushR = 6;
+            // 物理真实感触碰：微量高斯软注入
+            if (pointer.down && pointer.x > 3 && pointer.x < simW - 3 && pointer.y > 3 && pointer.y < simH - 3) {
+                const brushR = 3; 
                 for (let dy = -brushR; dy <= brushR; dy++) {
                     for (let dx = -brushR; dx <= brushR; dx++) {
-                        if (dx * dx + dy * dy <= brushR * brushR) {
+                        const dist = Math.sqrt(dx * dx + dy * dy);
+                        if (dist <= brushR) {
+                            const falloff = 1.0 - dist / brushR;
                             const idx = ((pointer.y + dy) * simW + (pointer.x + dx)) * 2;
-                            grid[idx] = 0.0;
-                            grid[idx + 1] = 1.0;
+                            // 温和渗透，保留底质 A 的存在，不触发极值过曝
+                            grid[idx] = Math.max(0.1, grid[idx] - falloff * 0.35);
+                            grid[idx + 1] = Math.min(0.85, grid[idx + 1] + falloff * 0.45);
                         }
                     }
                 }
             }
 
-            // 反应-扩散微分迭代（移动端高性能 7 次迭代）
             const w2 = simW * 2;
             for (let step = 0; step < 7; step++) {
+                // 内部网格拉普拉斯卷积
                 for (let y = 1; y < simH - 1; y++) {
                     const row = y * w2;
                     const rowUp = row - w2;
@@ -160,15 +153,12 @@
                         const a = grid[idx];
                         const b = grid[idx + 1];
 
-                        // 绝对对称的九宫格离散拉普拉斯卷积，彻底杜绝定向漂移
                         let lapA = a * -1.0;
                         let lapB = b * -1.0;
 
-                        // 正交相邻项 (权重 0.2)
                         lapA += (grid[idx - 2] + grid[idx + 2] + grid[rowUp + x * 2] + grid[rowDown + x * 2]) * 0.2;
                         lapB += (grid[idx - 1] + grid[idx + 3] + grid[rowUp + x * 2 + 1] + grid[rowDown + x * 2 + 1]) * 0.2;
 
-                        // 对角相邻项 (权重 0.05)
                         lapA += (grid[rowUp + (x - 1) * 2] + grid[rowUp + (x + 1) * 2] + 
                                  grid[rowDown + (x - 1) * 2] + grid[rowDown + (x + 1) * 2]) * 0.05;
                         lapB += (grid[rowUp + (x - 1) * 2 + 1] + grid[rowUp + (x + 1) * 2 + 1] + 
@@ -176,27 +166,45 @@
 
                         const abb = a * b * b;
 
-                        // 微分方程积分与数值钳制约束
-                        const nextA = a + (Da * lapA - abb + f * (1.0 - a));
-                        const nextB = b + (Db * lapB + abb - (k + f) * b);
-
-                        next[idx] = Math.max(0.0, Math.min(1.0, nextA));
-                        next[idx + 1] = Math.max(0.0, Math.min(1.0, nextB));
+                        next[idx] = Math.max(0.0, Math.min(1.0, a + (Da * lapA - abb + f * (1.0 - a))));
+                        next[idx + 1] = Math.max(0.0, Math.min(1.0, b + (Db * lapB + abb - (k + f) * b)));
                     }
                 }
+
+                // 核心修复：诺伊曼边界零通量同步，彻底消灭未定义缓冲造成的绿光闪烁
+                for (let y = 0; y < simH; y++) {
+                    const r = y * w2;
+                    // 左边缘同步第 1 列
+                    next[r] = next[r + 2];
+                    next[r + 1] = next[r + 3];
+                    // 右边缘同步倒数第 2 列
+                    next[r + (simW - 1) * 2] = next[r + (simW - 2) * 2];
+                    next[r + (simW - 1) * 2 + 1] = next[r + (simW - 2) * 2 + 1];
+                }
+                for (let x = 0; x < simW; x++) {
+                    const top = x * 2;
+                    const btm = (simH - 1) * w2 + x * 2;
+                    // 上边缘同步第 1 行
+                    next[top] = next[w2 + top];
+                    next[top + 1] = next[w2 + top + 1];
+                    // 下边缘同步倒数第 2 行
+                    next[btm] = next[btm - w2];
+                    next[btm + 1] = next[btm - w2 + 1];
+                }
+
                 const temp = grid; grid = next; next = temp;
             }
 
-            // 高动态色彩映射
+            // 色彩映射渲染
             const pixels = imageData.data;
             const len = simW * simH;
             for (let i = 0; i < len; i++) {
                 const val = grid[i * 2] - grid[i * 2 + 1];
                 const p = i * 4;
 
-                pixels[p] = Math.max(0, 50 - val * 200);
-                pixels[p + 1] = Math.max(20, 255 - Math.abs(val + 0.2) * 350);
-                pixels[p + 2] = Math.max(50, 200 + val * 100);
+                pixels[p] = Math.max(0, 45 - val * 180);
+                pixels[p + 1] = Math.max(15, 240 - Math.abs(val + 0.15) * 320);
+                pixels[p + 2] = Math.max(45, 190 + val * 100);
                 pixels[p + 3] = 255;
             }
 
