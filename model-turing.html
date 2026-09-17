@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>图灵斑图 (Reaction-Diffusion) - 零边界噪声版</title>
+    <title>图灵斑图 (Reaction-Diffusion) - 连续笔触插值版</title>
     <style>
         body { 
             margin: 0; 
@@ -34,9 +34,9 @@
 </head>
 <body>
     <div id="ui">
-        TURING PATTERN // NEUMANN BOUNDARY<br>
-        状态：<span class="highlight">零通量边界约束 / 微量软渗透</span><br>
-        交互：轻触屏幕划动，观察微观有机原纤平滑分裂
+        TURING PATTERN // CONTINUOUS INJECTION<br>
+        状态：<span class="highlight">运动矢量高频线性插值 (消除断点)</span><br>
+        交互：任意速度划动，形成连贯流体轨迹
     </div>
     <canvas id="rdCanvas"></canvas>
 
@@ -80,7 +80,6 @@
                 grid[i * 2 + 1] = 0.0;
             }
 
-            // 初始化中心种子
             const cx = Math.floor(simW / 2);
             const cy = Math.floor(simH / 2);
             const seedR = 8;
@@ -96,53 +95,102 @@
         initSimulation();
         window.addEventListener('resize', initSimulation);
 
-        let pointer = { x: -100, y: -100, down: false };
+        let pointer = { 
+            x: -100, 
+            y: -100, 
+            prevX: -100, 
+            prevY: -100, 
+            down: false, 
+            isFirst: true 
+        };
 
         function updatePointer(e) {
             const rect = canvas.getBoundingClientRect();
             const clientX = e.touches ? e.touches[0].clientX : e.clientX;
             const clientY = e.touches ? e.touches[0].clientY : e.clientY;
-            pointer.x = Math.floor(((clientX - rect.left) / rect.width) * simW);
-            pointer.y = Math.floor(((clientY - rect.top) / rect.height) * simH);
+            pointer.x = ((clientX - rect.left) / rect.width) * simW;
+            pointer.y = ((clientY - rect.top) / rect.height) * simH;
         }
 
-        window.addEventListener('mousedown', (e) => { pointer.down = true; updatePointer(e); });
-        window.addEventListener('mousemove', (e) => { if (pointer.down) updatePointer(e); });
-        window.addEventListener('mouseup', () => pointer.down = false);
-        window.addEventListener('mouseleave', () => pointer.down = false);
+        function onPointerDown(e) {
+            pointer.down = true;
+            pointer.isFirst = true;
+            updatePointer(e);
+            pointer.prevX = pointer.x;
+            pointer.prevY = pointer.y;
+        }
+
+        function onPointerMove(e) {
+            if (pointer.down) {
+                updatePointer(e);
+            }
+        }
+
+        function onPointerUp() {
+            pointer.down = false;
+        }
+
+        window.addEventListener('mousedown', onPointerDown);
+        window.addEventListener('mousemove', onPointerMove);
+        window.addEventListener('mouseup', onPointerUp);
+        window.addEventListener('mouseleave', onPointerUp);
 
         window.addEventListener('touchstart', (e) => { 
-            pointer.down = true; 
-            updatePointer(e); 
+            onPointerDown(e); 
             e.preventDefault(); 
         }, { passive: false });
         window.addEventListener('touchmove', (e) => { 
-            if (pointer.down) updatePointer(e); 
+            onPointerMove(e); 
             e.preventDefault(); 
         }, { passive: false });
-        window.addEventListener('touchend', () => pointer.down = false);
+        window.addEventListener('touchend', onPointerUp);
 
-        function evolve() {
-            // 物理真实感触碰：微量高斯软注入
-            if (pointer.down && pointer.x > 3 && pointer.x < simW - 3 && pointer.y > 3 && pointer.y < simH - 3) {
-                const brushR = 3; 
-                for (let dy = -brushR; dy <= brushR; dy++) {
-                    for (let dx = -brushR; dx <= brushR; dx++) {
-                        const dist = Math.sqrt(dx * dx + dy * dy);
-                        if (dist <= brushR) {
-                            const falloff = 1.0 - dist / brushR;
-                            const idx = ((pointer.y + dy) * simW + (pointer.x + dx)) * 2;
-                            // 温和渗透，保留底质 A 的存在，不触发极值过曝
-                            grid[idx] = Math.max(0.1, grid[idx] - falloff * 0.35);
-                            grid[idx + 1] = Math.min(0.85, grid[idx + 1] + falloff * 0.45);
-                        }
+        // 局部软核注入函数
+        function injectAt(cx, cy) {
+            const brushR = 2.8;
+            const rCeil = Math.ceil(brushR);
+            const minX = Math.max(1, Math.floor(cx - rCeil));
+            const maxX = Math.min(simW - 2, Math.ceil(cx + rCeil));
+            const minY = Math.max(1, Math.floor(cy - rCeil));
+            const maxY = Math.min(simH - 2, Math.ceil(cy + rCeil));
+
+            for (let py = minY; py <= maxY; py++) {
+                for (let px = minX; px <= maxX; px++) {
+                    const distSq = (cx - px) * (cx - px) + (cy - py) * (cy - py);
+                    if (distSq <= brushR * brushR) {
+                        const falloff = 1.0 - Math.sqrt(distSq) / brushR;
+                        const idx = (py * simW + px) * 2;
+                        grid[idx] = Math.max(0.1, grid[idx] - falloff * 0.28);
+                        grid[idx + 1] = Math.min(0.85, grid[idx + 1] + falloff * 0.38);
                     }
                 }
+            }
+        }
+
+        function evolve() {
+            // 连续笔触线性插值：将离散事件连接为连续柱状体
+            if (pointer.down) {
+                if (pointer.isFirst) {
+                    injectAt(pointer.x, pointer.y);
+                    pointer.isFirst = false;
+                } else {
+                    const dx = pointer.x - pointer.prevX;
+                    const dy = pointer.y - pointer.prevY;
+                    const dist = Math.hypot(dx, dy);
+                    // 步长设为 1.2 个网格单位，确保高速滑动下采样点紧密相切无断层
+                    const steps = Math.max(1, Math.ceil(dist / 1.2));
+                    
+                    for (let s = 1; s <= steps; s++) {
+                        const t = s / steps;
+                        injectAt(pointer.prevX + dx * t, pointer.prevY + dy * t);
+                    }
+                }
+                pointer.prevX = pointer.x;
+                pointer.prevY = pointer.y;
             }
 
             const w2 = simW * 2;
             for (let step = 0; step < 7; step++) {
-                // 内部网格拉普拉斯卷积
                 for (let y = 1; y < simH - 1; y++) {
                     const row = y * w2;
                     const rowUp = row - w2;
@@ -171,23 +219,19 @@
                     }
                 }
 
-                // 核心修复：诺伊曼边界零通量同步，彻底消灭未定义缓冲造成的绿光闪烁
+                // 诺伊曼边界零通量同步
                 for (let y = 0; y < simH; y++) {
                     const r = y * w2;
-                    // 左边缘同步第 1 列
                     next[r] = next[r + 2];
                     next[r + 1] = next[r + 3];
-                    // 右边缘同步倒数第 2 列
                     next[r + (simW - 1) * 2] = next[r + (simW - 2) * 2];
                     next[r + (simW - 1) * 2 + 1] = next[r + (simW - 2) * 2 + 1];
                 }
                 for (let x = 0; x < simW; x++) {
                     const top = x * 2;
                     const btm = (simH - 1) * w2 + x * 2;
-                    // 上边缘同步第 1 行
                     next[top] = next[w2 + top];
                     next[top + 1] = next[w2 + top + 1];
-                    // 下边缘同步倒数第 2 行
                     next[btm] = next[btm - w2];
                     next[btm + 1] = next[btm - w2 + 1];
                 }
@@ -195,7 +239,6 @@
                 const temp = grid; grid = next; next = temp;
             }
 
-            // 色彩映射渲染
             const pixels = imageData.data;
             const len = simW * simH;
             for (let i = 0; i < len; i++) {
