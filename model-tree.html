@@ -29,13 +29,15 @@
             line-height: 1.6;
             text-shadow: 0 1px 3px #000;
         }
+        .highlight { color: #ff3366; font-weight: bold; }
     </style>
 </head>
 <body>
     <div id="info">
         L-SYSTEM RECURSIVE PLANT<br>
-        交互：向上滑动拔高生长 / 左右滑动展开枝冠<br>
-        SPREAD: <span id="ang"></span> | GROWTH: <span id="sca"></span>
+        状态：<span class="highlight">全量程张角 / 解除对称锁</span><br>
+        交互：向上拉伸拔高 / 向右拖拽体验极限卷曲
+        <br>SPREAD: <span id="ang"></span> | GROWTH: <span id="sca"></span>
     </div>
     <canvas id="treeCanvas"></canvas>
 
@@ -47,8 +49,8 @@
         
         let width = 0, height = 0;
         let mouseX = 0, mouseY = 0;
-        let targetAngle = 0.45; // 弧度基准
-        let targetScale = 0.65; // 缩放比例
+        let targetAngle = 0.45; 
+        let targetScale = 0.65; 
         let curAngle = targetAngle;
         let curScale = targetScale;
         let time = 0;
@@ -58,7 +60,7 @@
             width = canvas.width = window.innerWidth;
             height = canvas.height = window.innerHeight;
             if (!isTouching) {
-                mouseX = width / 2;
+                mouseX = width * 0.3;
                 mouseY = height * 0.45;
             }
         }
@@ -70,13 +72,14 @@
             mouseX = clientX;
             mouseY = clientY;
 
-            // 【核心修正 1：Y轴反转】手指往上划 (mouseY 变小)，生长比例反而增大！
-            const normY = 1.0 - Math.min(Math.max(mouseY / height, 0.1), 0.9);
-            targetScale = 0.48 + normY * 0.28; // 范围 0.48 ~ 0.76
+            // Y轴：向上滑动拔高生长
+            const normY = 1.0 - Math.min(Math.max(mouseY / height, 0.05), 0.95);
+            targetScale = 0.45 + normY * 0.32; 
 
-            // 【核心修正 2：居中张角】从屏幕中间向两侧滑动，树冠对称张开
-            const centerDist = Math.abs(mouseX - width / 2) / (width / 2);
-            targetAngle = 0.15 + centerDist * 0.75; // 范围约 8° ~ 51°
+            // 【核心修正】：X轴解除中心对称，改为从左到右的线性映射！
+            // 鼠标在最左侧时，树枝闭合 (0.05 rad)；在最右侧时，暴力张开到 144° 极限卷曲！
+            const normX = Math.min(Math.max(mouseX / width, 0.0), 1.0);
+            targetAngle = 0.05 + normX * Math.PI * 0.8; 
         }
 
         window.addEventListener('mousemove', e => updateInput(e.clientX, e.clientY));
@@ -96,7 +99,6 @@
 
             if (depth === 0) return;
 
-            // 微风摇曳模拟
             const wind = Math.sin(time + depth * 0.8) * 0.03;
 
             // 右侧分支
@@ -117,7 +119,6 @@
         }
 
         function render() {
-            // 平滑插值消除手部抖动
             curAngle += (targetAngle - curAngle) * 0.08;
             curScale += (targetScale - curScale) * 0.08;
 
@@ -128,14 +129,14 @@
             scaDisp.innerText = curScale.toFixed(2);
 
             ctx.save();
-            // 根部放置在底部稍偏上 30px，给留白和UI腾出呼吸感
             ctx.translate(width / 2, height - 20);
             ctx.strokeStyle = '#ffffff';
             ctx.lineWidth = 6;
             
-            // 主干高度自适应屏幕尺寸，长屏手机不再出现过长大白杆
-            const trunkLen = Math.min(height * 0.22, 160);
-            drawBranch(trunkLen, 9); // 9级递归在手机上帧率最饱满稳定
+            const trunkLen = Math.min(height * 0.22, 180);
+            
+            // 提升递归深度到 10 层，配合暴力张角产生更密集的细节
+            drawBranch(trunkLen, 10); 
             ctx.restore();
 
             time += 0.02;
