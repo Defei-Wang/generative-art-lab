@@ -3,16 +3,42 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>图灵斑图 (Reaction-Diffusion) - 稳定性修复版</title>
+    <title>图灵斑图 (Reaction-Diffusion) - 正比例修复版</title>
     <style>
-        body { margin: 0; overflow: hidden; background: #000; display: flex; justify-content: center; align-items: center; touch-action: none; }
-        canvas { display: block; image-rendering: pixelated; width: 100vw; height: 100vh; object-fit: cover; }
-        #ui { position: absolute; top: 20px; left: 20px; color: #fff; font-family: monospace; font-size: 13px; pointer-events: none; mix-blend-mode: difference; line-height: 1.5; }
+        body { 
+            margin: 0; 
+            overflow: hidden; 
+            background: #000; 
+            display: flex; 
+            justify-content: center; 
+            align-items: center; 
+            height: 100vh; 
+            touch-action: none; 
+        }
+        /* 核心修复：保持 1:1 严格正方形，根据屏幕短边自适应最大铺满，避免拉伸畸变 */
+        canvas { 
+            display: block; 
+            image-rendering: pixelated; 
+            width: min(100vw, 100vh); 
+            height: min(100vw, 100vh); 
+            box-shadow: 0 0 30px rgba(0, 0, 0, 0.8);
+        }
+        #ui { 
+            position: absolute; 
+            top: 20px; 
+            left: 20px; 
+            color: #fff; 
+            font-family: monospace; 
+            font-size: 13px; 
+            pointer-events: none; 
+            mix-blend-mode: difference; 
+            line-height: 1.5; 
+        }
         .highlight { color: #00ffcc; font-weight: bold; }
     </style>
 </head>
 <body>
-    <div id="ui">TURING PATTERN // REACTION-DIFFUSION<br>系统状态：<span class="highlight">数值钳制已激活 (抗坍缩)</span><br>交互：随意拖拽涂抹，观察组织的撕裂与重生</div>
+    <div id="ui">TURING PATTERN // REACTION-DIFFUSION<br>系统状态：<span class="highlight">正比例几何锁定</span><br>交互：拖拽涂抹，观察自组织迷宫</div>
     <canvas id="rdCanvas"></canvas>
 
     <script>
@@ -38,10 +64,13 @@
             grid[i * 2 + 1] = 0.0;
         }
 
+        // 中心正圆初始种子
         const cx = width / 2, cy = height / 2;
-        for (let y = cy - 6; y < cy + 6; y++) {
-            for (let x = cx - 6; x < cx + 6; x++) {
-                grid[(y * width + x) * 2 + 1] = 1.0;
+        for (let y = cy - 8; y < cy + 8; y++) {
+            for (let x = cx - 8; x < cx + 8; x++) {
+                if ((x - cx) ** 2 + (y - cy) ** 2 <= 64) {
+                    grid[(y * width + x) * 2 + 1] = 1.0;
+                }
             }
         }
 
@@ -51,8 +80,10 @@
             const rect = canvas.getBoundingClientRect();
             const clientX = e.touches ? e.touches[0].clientX : e.clientX;
             const clientY = e.touches ? e.touches[0].clientY : e.clientY;
-            pointer.x = Math.floor((clientX - rect.left) / rect.width * width);
-            pointer.y = Math.floor((clientY - rect.top) / rect.height * height);
+            
+            // 严格基于 Canvas 当前在屏幕上的实际像素映射，彻底消除触摸畸变
+            pointer.x = Math.floor(((clientX - rect.left) / rect.width) * width);
+            pointer.y = Math.floor(((clientY - rect.top) / rect.height) * height);
         }
 
         window.addEventListener('mousedown', (e) => { pointer.down = true; updatePointer(e); });
@@ -65,10 +96,11 @@
         window.addEventListener('touchend', () => pointer.down = false);
 
         function evolve() {
-            if (pointer.down && pointer.x > 4 && pointer.x < width - 4 && pointer.y > 4 && pointer.y < height - 4) {
-                for(let dy = -4; dy <= 4; dy++) {
-                    for(let dx = -4; dx <= 4; dx++) {
-                        if (dx*dx + dy*dy < 16) {
+            // 安全注入物质 B (画出的是正圆笔触)
+            if (pointer.down && pointer.x > 5 && pointer.x < width - 5 && pointer.y > 5 && pointer.y < height - 5) {
+                for(let dy = -5; dy <= 5; dy++) {
+                    for(let dx = -5; dx <= 5; dx++) {
+                        if (dx*dx + dy*dy <= 25) {
                             const idx = ((pointer.y + dy) * width + (pointer.x + dx)) * 2;
                             grid[idx] = 0.0;
                             grid[idx + 1] = 1.0;
@@ -77,6 +109,7 @@
                 }
             }
 
+            // 反应-扩散演算
             for (let step = 0; step < 8; step++) {
                 for (let x = 1; x < width - 1; x++) {
                     for (let y = 1; y < height - 1; y++) {
@@ -88,7 +121,7 @@
                         let lapB = b * -1;
                         lapA += (grid[idx - 2] + grid[idx + 2] + grid[idx - width * 2] + grid[idx + width * 2]) * 0.2;
                         lapB += (grid[idx - 1] + grid[idx + 3] + grid[idx - width * 2 + 1] + grid[idx + width * 2 + 1]) * 0.2;
-                        lapA += (grid[idx - width * 2 - 2] + grid[idx - width * 2 + 2] + grid[idx - width * 2 - 2] + grid[idx + width * 2 + 2]) * 0.05;
+                        lapA += (grid[idx - width * 2 - 2] + grid[idx - width * 2 + 2] + grid[idx + width * 2 - 2] + grid[idx + width * 2 + 2]) * 0.05;
                         lapB += (grid[idx - width * 2 - 1] + grid[idx - width * 2 + 3] + grid[idx - width * 2 - 1] + grid[idx + width * 2 + 3]) * 0.05;
 
                         const abb = a * b * b;
@@ -103,6 +136,7 @@
                 let temp = grid; grid = next; next = temp;
             }
 
+            // 色彩映射
             const pixels = imageData.data;
             for (let i = 0; i < width * height; i++) {
                 const val = (grid[i * 2] - grid[i * 2 + 1]);
