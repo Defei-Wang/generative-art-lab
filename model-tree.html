@@ -3,12 +3,12 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>互动 L-System 变异植物 - 全景适配版</title>
+    <title>互动 L-System - 全域包围盒自适应版</title>
     <style>
         body { 
             margin: 0; 
             overflow: hidden; 
-            background: #0a0a0a; 
+            background: #050508; 
             touch-action: none; 
             width: 100vw;
             height: 100vh;
@@ -35,9 +35,9 @@
 </head>
 <body>
     <div id="info">
-        L-SYSTEM // AUTO-FIT VIEWPORT<br>
-        状态：<span class="highlight">全景自动适屏 (100% 完整可视)</span><br>
-        交互：向上拔高生长 / 向右舒展枝冠<br>
+        L-SYSTEM // BOUNDING-BOX AUTO-FIT<br>
+        状态：<span class="highlight">全景几何居中 (100% 完整可视)</span><br>
+        交互：拖拽屏幕改变生长拓扑<br>
         ANGLE: <span id="ang"></span> | SCALE: <span id="sca"></span>
     </div>
     <canvas id="treeCanvas"></canvas>
@@ -48,17 +48,14 @@
         const angDisp = document.getElementById('ang');
         const scaDisp = document.getElementById('sca');
         
-        let width = 0;
-        let height = 0;
-        let dpr = 1;
-        
-        let mouseX = 0;
-        let mouseY = 0;
+        let width = 0, height = 0, dpr = 1;
+        let mouseX = 0, mouseY = 0;
         let time = 0;
 
-        // 平滑过渡变量，防止画面突变
-        let smoothScale = 0.6;
-        let smoothRootY = 0;
+        // 阻尼平滑摄像机参数
+        let smoothScale = 1.0;
+        let smoothCenterX = 0;
+        let smoothCenterY = 0;
 
         function resize() {
             width = window.innerWidth || document.documentElement.clientWidth || 360;
@@ -71,11 +68,8 @@
             canvas.style.height = height + 'px';
 
             if (mouseX === 0 && mouseY === 0) {
-                mouseX = width * 0.35;
+                mouseX = width * 0.4;
                 mouseY = height * 0.45;
-            }
-            if (smoothRootY === 0) {
-                smoothRootY = height - 30;
             }
         }
         window.addEventListener('resize', resize);
@@ -96,73 +90,30 @@
         }, { passive: false });
 
         // ============================================================
-        // 核心算法：快速包围盒预测 (基于 8 级对称分枝，耗时 <0.02ms)
-        // 计算当前形态在基准 100px 主干时的 [最大半宽, 最高点, 最低点]
+        // 核心算法 1：包围盒遍历 (耗时 < 0.04ms)
         // ============================================================
-        let maxReachX = 0;
-        let minReachY = 0;
-        let maxReachY = 0;
+        let bMinX = 0, bMaxX = 0, bMinY = 0, bMaxY = 0;
 
-        function measureBranch(x, y, vx, vy, len, depth, angle, scale) {
-            const ex = x + vx * len;
-            const ey = y + vy * len;
+        function computeBounds(x, y, angle, len, depth, branchAngle, branchScale) {
+            const x2 = x + Math.sin(angle) * len;
+            const y2 = y - Math.cos(angle) * len;
 
-            if (Math.abs(ex) > maxReachX) maxReachX = Math.abs(ex);
-            if (ey < minReachY) minReachY = ey;
-            if (ey > maxReachY) maxReachY = ey;
+            if (x2 < bMinX) bMinX = x2;
+            if (x2 > bMaxX) bMaxX = x2;
+            if (y2 < bMinY) bMinY = y2;
+            if (y2 > bMaxY) bMaxY = y2;
 
             if (depth <= 1) return;
 
-            const nLen = len * scale;
-            const cosA = Math.cos(angle);
-            const sinA = Math.sin(angle);
-
-            // 右支
-            const rx = vx * cosA - vy * sinA;
-            const ry = vx * sinA + vy * cosA;
-            measureBranch(ex, ey, rx, ry, nLen, depth - 1, angle, scale);
-
-            // 左支
-            const lx = vx * cosA + vy * sinA;
-            const ly = -vx * sinA + vy * cosA;
-            measureBranch(ex, ey, lx, ly, nLen, depth - 1, angle, scale);
-        }
-
-        function calculateAutoFit(maxAngle, branchScale) {
-            maxReachX = 0;
-            minReachY = 0;
-            maxReachY = 0;
-
-            const baseTrunk = 100;
-            // 预测 8 级已具备 95% 以上的包围盒几何精度
-            measureBranch(0, 0, 0, -1, baseTrunk, 8, maxAngle, branchScale);
-
-            // 留出 8% 余量，包容更深层级与微风晃动
-            const totalHalfWidth = maxReachX * 1.08;
-            const totalHeightUp = Math.abs(minReachY) * 1.08;
-            const totalDroopDown = Math.max(0, maxReachY) * 1.08;
-            const totalTreeHeight = totalHeightUp + totalDroopDown;
-
-            // 屏幕可用范围 (留出顶部信息栏与边缘安全边距)
-            const availWidth = width * 0.88;
-            const availHeight = height * 0.72;
-
-            // 宽高双向约束，取最紧的限制因子
-            const scaleFactorX = availWidth / (totalHalfWidth * 2);
-            const scaleFactorY = availHeight / totalTreeHeight;
-            const finalRatio = Math.min(scaleFactorX, scaleFactorY);
-
-            // 算出完美匹配屏幕的主干长度与树根 Y 轴坐标
-            const targetTrunk = baseTrunk * finalRatio;
-            const targetRootY = height - 25 - (totalDroopDown * finalRatio);
-
-            return { targetTrunk, targetRootY };
+            const nextLen = len * branchScale;
+            computeBounds(x2, y2, angle + branchAngle, nextLen, depth - 1, branchAngle, branchScale);
+            computeBounds(x2, y2, angle - branchAngle, nextLen, depth - 1, branchAngle, branchScale);
         }
 
         // ============================================================
-        // 递归渲染管线
+        // 核心算法 2：真实树形绘制
         // ============================================================
-        function drawBranch(len, depth, maxAngle, branchScale) {
+        function drawBranch(len, depth, branchAngle, branchScale) {
             ctx.beginPath();
             ctx.moveTo(0, 0);
             ctx.lineTo(0, -len);
@@ -171,52 +122,64 @@
 
             if (depth === 0) return;
 
-            const wind = Math.sin(time + depth * 0.7) * 0.02;
+            const wind = Math.sin(time + depth * 0.7) * 0.018;
 
-            // 右侧分支
             ctx.save();
-            ctx.rotate(maxAngle + wind);
+            ctx.rotate(branchAngle + wind);
             ctx.strokeStyle = `hsl(${depth * 24 + time * 35}, 100%, 65%)`;
-            ctx.lineWidth = Math.max(depth * 0.65, 0.7);
-            drawBranch(len * branchScale, depth - 1, maxAngle, branchScale);
+            ctx.lineWidth = Math.max(depth * 0.6, 0.7);
+            drawBranch(len * branchScale, depth - 1, branchAngle, branchScale);
             ctx.restore();
 
-            // 左侧分支
             ctx.save();
-            ctx.rotate(-maxAngle + wind);
+            ctx.rotate(-branchAngle + wind);
             ctx.strokeStyle = `hsl(${depth * 24 + time * 35 + 120}, 100%, 65%)`;
-            ctx.lineWidth = Math.max(depth * 0.65, 0.7);
-            drawBranch(len * branchScale, depth - 1, maxAngle, branchScale);
+            ctx.lineWidth = Math.max(depth * 0.6, 0.7);
+            drawBranch(len * branchScale, depth - 1, branchAngle, branchScale);
             ctx.restore();
         }
 
         function render() {
             ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
-            ctx.fillStyle = 'rgba(10, 10, 10, 0.35)';
+            ctx.fillStyle = 'rgba(5, 5, 8, 0.35)';
             ctx.fillRect(0, 0, width, height);
 
             // 参数映射
-            const maxAngle = (mouseX / width) * (Math.PI * 0.78); 
-            const branchScale = 0.42 + (1.0 - mouseY / height) * 0.32;
+            const branchAngle = (mouseX / width) * (Math.PI * 0.75); 
+            const branchScale = 0.42 + (1.0 - mouseY / height) * 0.33;
 
-            angDisp.innerText = ((mouseX / width) * 140).toFixed(1) + '°';
+            angDisp.innerText = ((mouseX / width) * 135).toFixed(1) + '°';
             scaDisp.innerText = branchScale.toFixed(2);
 
-            // 执行包围盒预测，获取完美适配屏幕的几何尺寸
-            const fit = calculateAutoFit(maxAngle, branchScale);
+            // 1. 基准尺寸下遍历包围盒
+            const baseTrunk = 100;
+            bMinX = 0; bMaxX = 0; bMinY = -baseTrunk; bMaxY = 0;
+            computeBounds(0, 0, 0, baseTrunk, 10, branchAngle, branchScale);
 
-            // 阻尼平滑插值，避免手势移动过快时画面突变
-            smoothScale += (fit.targetTrunk - smoothScale) * 0.1;
-            smoothRootY += (fit.targetRootY - smoothRootY) * 0.1;
+            // 2. 几何宽高与中心提取
+            const treeW = Math.max(bMaxX - bMinX, 10);
+            const treeH = Math.max(bMaxY - bMinY, 10);
+            const centerX = (bMinX + bMaxX) / 2;
+            const centerY = (bMinY + bMaxY) / 2;
 
+            // 3. 计算适配屏幕的最佳缩放比 (四周预留充足留白)
+            const targetFitScale = Math.min((width * 0.82) / treeW, (height * 0.72) / treeH);
+
+            // 平滑阻尼插值，消除手势突变时的剧烈晃动
+            smoothScale += (targetFitScale - smoothScale) * 0.12;
+            smoothCenterX += (centerX - smoothCenterX) * 0.12;
+            smoothCenterY += (centerY - smoothCenterY) * 0.12;
+
+            // 4. 将摄像机平移至屏幕视觉重心（略偏下避开顶部导航）
             ctx.save();
-            ctx.translate(width / 2, smoothRootY);
+            ctx.translate(width / 2, height * 0.54);
+            ctx.scale(smoothScale, smoothScale);
+            ctx.translate(-smoothCenterX, -smoothCenterY);
+
             ctx.strokeStyle = '#ffffff';
             ctx.lineWidth = 7;
-            
-            // 采用自适应主干长度，始终保持 11 层致密渲染
-            drawBranch(smoothScale, 11, maxAngle, branchScale);
+            drawBranch(baseTrunk, 10, branchAngle, branchScale);
             ctx.restore();
 
             time += 0.02;
@@ -226,4 +189,3 @@
     </script>
 </body>
 </html>
-
