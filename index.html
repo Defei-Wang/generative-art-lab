@@ -12,50 +12,53 @@
             color: #eee; 
             font-family: 'Helvetica Neue', Helvetica, monospace; 
             overflow: hidden; 
+            height: 100vh;
         }
         
-        /* 顶部导航栏 / 控制台UI */
         header {
             position: absolute;
             top: 0;
             left: 0;
             width: 100%;
             height: 60px;
-            background: rgba(10, 10, 10, 0.8);
+            background: rgba(10, 10, 10, 0.85);
             backdrop-filter: blur(10px);
             -webkit-backdrop-filter: blur(10px);
             border-bottom: 1px solid rgba(255, 255, 255, 0.1);
             display: flex;
             align-items: center;
             justify-content: space-between;
-            padding: 0 20px;
+            padding: 0 15px;
             box-sizing: border-box;
             z-index: 100;
+            transition: transform 0.3s ease;
+        }
+
+        /* 隐藏顶部栏时的状态 */
+        header.hide {
+            transform: translateY(-100%);
         }
 
         .brand {
-            font-size: 14px;
+            font-size: 13px;
             letter-spacing: 2px;
             font-weight: bold;
             color: #fff;
-            text-shadow: 0 0 10px rgba(255,255,255,0.3);
         }
 
-        .brand span {
-            color: #00ffcc;
-        }
+        .brand span { color: #00ffcc; }
 
         .nav-buttons {
             display: flex;
-            gap: 15px;
+            gap: 8px;
         }
 
         button {
             background: transparent;
             border: 1px solid rgba(255, 255, 255, 0.2);
             color: rgba(255, 255, 255, 0.6);
-            padding: 8px 16px;
-            font-size: 12px;
+            padding: 6px 12px;
+            font-size: 11px;
             letter-spacing: 1px;
             border-radius: 4px;
             cursor: pointer;
@@ -63,31 +66,44 @@
             font-family: monospace;
         }
 
-        button:hover {
-            border-color: #00ffcc;
-            color: #00ffcc;
-            background: rgba(0, 255, 204, 0.1);
-        }
-
         button.active {
             border-color: #ff3366;
             color: #ff3366;
             background: rgba(255, 51, 102, 0.1);
-            box-shadow: 0 0 10px rgba(255, 51, 102, 0.2);
         }
 
-        /* 核心展示区 iframe */
+        /* 沉浸模式切换按钮 */
+        .fs-toggle {
+            position: absolute;
+            top: 70px;
+            right: 15px;
+            z-index: 90;
+            background: rgba(20, 20, 20, 0.6);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            color: #888;
+            font-size: 10px;
+            padding: 5px 8px;
+            border-radius: 4px;
+            cursor: pointer;
+            backdrop-filter: blur(4px);
+        }
+
         #viewport {
             position: absolute;
-            top: 60px; /* 留出 header 的高度 */
+            top: 60px;
             left: 0;
             width: 100vw;
             height: calc(100vh - 60px);
             border: none;
             background: #000;
+            transition: all 0.3s ease;
         }
 
-        /* 加载动画幕布 */
+        #viewport.fullscreen {
+            top: 0;
+            height: 100vh;
+        }
+
         #loader {
             position: absolute;
             top: 60px;
@@ -101,36 +117,35 @@
             z-index: 50;
             color: #00ffcc;
             font-family: monospace;
-            font-size: 14px;
-            letter-spacing: 3px;
-            transition: opacity 0.5s ease;
+            font-size: 13px;
+            letter-spacing: 2px;
+            transition: opacity 0.4s ease;
             pointer-events: none;
         }
 
-        /* 移动端适配 */
         @media (max-width: 768px) {
             header {
                 flex-direction: column;
                 height: auto;
-                padding: 10px;
+                padding: 10px 8px;
             }
-            .brand { margin-bottom: 10px; }
+            .brand { margin-bottom: 8px; }
             .nav-buttons {
                 flex-wrap: wrap;
                 justify-content: center;
-                gap: 8px;
             }
             #viewport, #loader {
-                top: 100px;
-                height: calc(100vh - 100px);
+                top: 85px;
+                height: calc(100vh - 85px);
             }
+            .fs-toggle { top: 95px; }
         }
     </style>
 </head>
 <body>
 
-    <header>
-        <div class="brand">GENERATIVE <span>ART LAB</span> // 01</div>
+    <header id="header">
+        <div class="brand">GENERATIVE <span>ART LAB</span></div>
         <div class="nav-buttons">
             <button onclick="loadModel('model-life.html', this)" class="active">PARTICLE LIFE</button>
             <button onclick="loadModel('model-tree.html', this)">L-SYSTEM</button>
@@ -139,36 +154,40 @@
         </div>
     </header>
 
+    <div class="fs-toggle" onclick="toggleImmersive()">[沉浸模式]</div>
     <div id="loader">INITIALIZING KERNEL...</div>
-    
-    <!-- 默认加载第一个模型 -->
     <iframe id="viewport" src="model-life.html"></iframe>
 
     <script>
         const iframe = document.getElementById('viewport');
         const loader = document.getElementById('loader');
+        const header = document.getElementById('header');
 
-        // 监听 iframe 加载完成事件，隐藏 loading
         iframe.addEventListener('load', () => {
             loader.style.opacity = '0';
         });
 
         function loadModel(url, btnElement) {
-            // 显示 loading 幕布
             loader.style.opacity = '1';
             loader.innerText = 'COMPILING ALGORITHM...';
 
-            // 更新导航按钮的高亮状态
             const buttons = document.querySelectorAll('.nav-buttons button');
             buttons.forEach(btn => btn.classList.remove('active'));
             btnElement.classList.add('active');
 
-            // 延迟极短的时间以确保 loading 动画生效，然后切换 iframe 源
             setTimeout(() => {
                 iframe.src = url;
-            }, 50);
+            }, 40);
+        }
+
+        // 沉浸模式切换：收起导航栏，让 iframe 真正 100% 占满手机屏幕
+        let isImmersive = false;
+        function toggleImmersive() {
+            isImmersive = !isImmersive;
+            header.classList.toggle('hide', isImmersive);
+            iframe.classList.toggle('fullscreen', isImmersive);
+            document.querySelector('.fs-toggle').innerText = isImmersive ? '[显示导航]' : '[沉浸模式]';
         }
     </script>
 </body>
 </html>
-
