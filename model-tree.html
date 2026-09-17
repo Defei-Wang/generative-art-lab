@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>互动 L-System - 全域包围盒自适应版</title>
+    <title>互动 L-System - 矢量发丝锐度版</title>
     <style>
         body { 
             margin: 0; 
@@ -35,8 +35,8 @@
 </head>
 <body>
     <div id="info">
-        L-SYSTEM // BOUNDING-BOX AUTO-FIT<br>
-        状态：<span class="highlight">全景几何居中 (100% 完整可视)</span><br>
+        L-SYSTEM // VECTOR INVERSE-SCALE<br>
+        状态：<span class="highlight">发丝级微距线宽 / 绝对完整可视</span><br>
         交互：拖拽屏幕改变生长拓扑<br>
         ANGLE: <span id="ang"></span> | SCALE: <span id="sca"></span>
     </div>
@@ -52,7 +52,6 @@
         let mouseX = 0, mouseY = 0;
         let time = 0;
 
-        // 阻尼平滑摄像机参数
         let smoothScale = 1.0;
         let smoothCenterX = 0;
         let smoothCenterY = 0;
@@ -89,9 +88,7 @@
             setPointer(e.touches[0].clientX, e.touches[0].clientY);
         }, { passive: false });
 
-        // ============================================================
-        // 核心算法 1：包围盒遍历 (耗时 < 0.04ms)
-        // ============================================================
+        // 包围盒预测计算
         let bMinX = 0, bMaxX = 0, bMinY = 0, bMaxY = 0;
 
         function computeBounds(x, y, angle, len, depth, branchAngle, branchScale) {
@@ -110,9 +107,7 @@
             computeBounds(x2, y2, angle - branchAngle, nextLen, depth - 1, branchAngle, branchScale);
         }
 
-        // ============================================================
-        // 核心算法 2：真实树形绘制
-        // ============================================================
+        // 递归渲染管线
         function drawBranch(len, depth, branchAngle, branchScale) {
             ctx.beginPath();
             ctx.moveTo(0, 0);
@@ -124,17 +119,20 @@
 
             const wind = Math.sin(time + depth * 0.7) * 0.018;
 
+            // 核心修复：线宽逆缩放补偿
+            // 确保在屏幕物理尺寸下，末梢细如发丝 (0.5px)，接近根部也仅 1.8px
+            const targetScreenPixels = Math.max(0.5, depth * 0.16);
+            ctx.lineWidth = targetScreenPixels / smoothScale;
+
             ctx.save();
             ctx.rotate(branchAngle + wind);
             ctx.strokeStyle = `hsl(${depth * 24 + time * 35}, 100%, 65%)`;
-            ctx.lineWidth = Math.max(depth * 0.6, 0.7);
             drawBranch(len * branchScale, depth - 1, branchAngle, branchScale);
             ctx.restore();
 
             ctx.save();
             ctx.rotate(-branchAngle + wind);
             ctx.strokeStyle = `hsl(${depth * 24 + time * 35 + 120}, 100%, 65%)`;
-            ctx.lineWidth = Math.max(depth * 0.6, 0.7);
             drawBranch(len * branchScale, depth - 1, branchAngle, branchScale);
             ctx.restore();
         }
@@ -145,41 +143,42 @@
             ctx.fillStyle = 'rgba(5, 5, 8, 0.35)';
             ctx.fillRect(0, 0, width, height);
 
-            // 参数映射
             const branchAngle = (mouseX / width) * (Math.PI * 0.75); 
             const branchScale = 0.42 + (1.0 - mouseY / height) * 0.33;
 
             angDisp.innerText = ((mouseX / width) * 135).toFixed(1) + '°';
             scaDisp.innerText = branchScale.toFixed(2);
 
-            // 1. 基准尺寸下遍历包围盒
+            // 几何边界测量
             const baseTrunk = 100;
             bMinX = 0; bMaxX = 0; bMinY = -baseTrunk; bMaxY = 0;
             computeBounds(0, 0, 0, baseTrunk, 10, branchAngle, branchScale);
 
-            // 2. 几何宽高与中心提取
             const treeW = Math.max(bMaxX - bMinX, 10);
             const treeH = Math.max(bMaxY - bMinY, 10);
             const centerX = (bMinX + bMaxX) / 2;
             const centerY = (bMinY + bMaxY) / 2;
 
-            // 3. 计算适配屏幕的最佳缩放比 (四周预留充足留白)
+            // 目标视口缩放比
             const targetFitScale = Math.min((width * 0.82) / treeW, (height * 0.72) / treeH);
 
-            // 平滑阻尼插值，消除手势突变时的剧烈晃动
             smoothScale += (targetFitScale - smoothScale) * 0.12;
             smoothCenterX += (centerX - smoothCenterX) * 0.12;
             smoothCenterY += (centerY - smoothCenterY) * 0.12;
 
-            // 4. 将摄像机平移至屏幕视觉重心（略偏下避开顶部导航）
             ctx.save();
             ctx.translate(width / 2, height * 0.54);
             ctx.scale(smoothScale, smoothScale);
             ctx.translate(-smoothCenterX, -smoothCenterY);
 
+            // 圆角线头，平滑微观接缝
+            ctx.lineCap = 'round';
+            ctx.lineJoin = 'round';
+
+            // 主干线宽逆补偿：在屏幕上恒定为 2.2 像素，杜绝实心白块
             ctx.strokeStyle = '#ffffff';
-            ctx.lineWidth = 7;
-            drawBranch(baseTrunk, 10, branchAngle, branchScale);
+            ctx.lineWidth = 2.2 / smoothScale;
+            drawBranch(baseTrunk, 11, branchAngle, branchScale);
             ctx.restore();
 
             time += 0.02;
