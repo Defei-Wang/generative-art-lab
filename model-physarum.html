@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>黏菌网络 (Physarum Polycephalum) - 节律输送与捕食版</title>
+    <style>
+        body { 
+            margin: 0; 
+            overflow: hidden; 
+            background: #030405; 
+            touch-action: none; 
+            width: 100vw; 
+            height: 100vh; 
+        }
+        canvas { 
+            display: block; 
+            width: 100vw; 
+            height: 100vh; 
+        }
+        #ui { 
+            position: absolute; 
+            top: 20px; 
+            left: 20px; 
+            color: rgba(220, 220, 200, 0.8); 
+            font-family: monospace; 
+            font-size: 11px; 
+            pointer-events: none; 
+            line-height: 1.7;
+            text-shadow: 0 1px 4px #000;
+            z-index: 10;
+        }
+        .highlight { color: #00ffcc; font-weight: bold; }
+        .food-tag { color: #ff3366; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <div id="ui">
+        PHYSARUM POLYCEPHALUM // BIOLOGICAL ENGINE<br>
+        生理：<span class="highlight">细胞质节律泵 (心跳式输送)</span><br>
+        生态：<span class="food-tag">拖拽注入食物，诱导管状脉络生长</span><br>
+        AGENTS: <span id="agentCount">0</span>
+    </div>
+    <canvas id="slimeCanvas"></canvas>
+
+    <script>
+        const canvas = document.getElementById('slimeCanvas');
+        const ctx = canvas.getContext('2d', { alpha: false });
+        const uiCount = document.getElementById('agentCount');
+
+        // 黏菌仿生参数
+        const SENSE_ANGLE = 45 * (Math.PI / 180); // 嗅觉夹角
+        const SENSE_DIST = 9.0;                   // 嗅觉触须长度
+        const TURN_ANGLE = 22 * (Math.PI / 180);  // 转向灵活性
+        const DECAY = 0.92;                       // 信息素挥发率 (决定旧路径消散速度)
+        
+        let simW = 0, simH = 0;
+        let numAgents = 0;
+        let agents = null;       // [x, y, angle] 扁平化数组
+        let grid = null;         // 黏菌自身分泌的信息素网络
+        let nextGrid = null;     // 扩散缓冲
+        let foodGrid = null;     // 外部投放的食物网络
+        let imageData = null;
+
+        function initSimulation() {
+            const screenW = window.innerWidth;
+            const screenH = window.innerHeight;
+            const aspect = screenW / screenH;
+
+            // 移动端/平板性能平衡：将计算分辨率锁定在 240 级别，保障 60 帧与高密度粒子
+            if (aspect >= 1.0) {
+                simH = 240;
+                simW = Math.round(240 * aspect);
+            } else {
+                simW = 240;
+                simH = Math.round(240 / aspect);
+            }
+
+            canvas.width = simW;
+            canvas.height = simH;
+
+            const totalCells = simW * simH;
+            grid = new Float32Array(totalCells);
+            nextGrid = new Float32Array(totalCells);
+            foodGrid = new Float32Array(totalCells);
+            imageData = ctx.createImageData(simW, simH);
+
+            // 根据屏幕面积自适应粒子总数 (1.5万 ~ 3万)
+            numAgents = Math.floor(totalCells * 0.35);
+            uiCount.innerText = numAgents;
+            agents = new Float32Array(numAgents * 3);
+
+            const cx = simW / 2;
+            const cy = simH / 2;
+            const spawnRadius = Math.min(simW, simH) * 0.15;
+
+            // 将初始孢子集中培养在中央圆形区域
+            for (let i = 0; i < numAgents; i++) {
+                const r = Math.random() * spawnRadius;
+                const theta = Math.random() * Math.PI * 2;
+                agents[i * 3] = cx + Math.cos(theta) * r;
+                agents[i * 3 + 1] = cy + Math.sin(theta) * r;
+                agents[i * 3 + 2] = Math.random() * Math.PI * 2; // 随机朝向
+            }
+        }
+
+        initSimulation();
+        window.addEventListener('resize', initSimulation);
+
+        // ==========================================
+        // 交互逻辑：食物投放与亚像素连续插值
+        // ==========================================
+        let inputTrail = [];
+        let isTouching = false;
+        let lastInputX = -1, lastInputY = -1;
+
+        function screenToGrid(clientX, clientY) {
+            const rect = canvas.getBoundingClientRect();
+            return {
+                x: ((clientX - rect.left) / rect.width) * simW,
+                y: ((clientY - rect.top) / rect.height) * simH
+            };
+        }
+
+        function recordInput(cx, cy) {
+            if (lastInputX < 0) {
+                inputTrail.push({ x: cx, y: cy });
+            } else {
+                const dist = Math.hypot(cx - lastInputX, cy - lastInputY);
+                const steps = Math.max(1, Math.ceil(dist / 1.0));
+                for (let s = 1; s <= steps; s++) {
+                    const t = s / steps;
+                    inputTrail.push({
+                        x: lastInputX + (cx - lastInputX) * t,
+                        y: lastInputY + (cy - lastInputY) * t
+                    });
+                }
+            }
+            lastInputX = cx;
+            lastInputY = cy;
+        }
+
+        const handleDown = (clientX, clientY) => {
+            isTouching = true; lastInputX = -1;
+            const p = screenToGrid(clientX, clientY);
+            recordInput(p.x, p.y);
+        };
+        const handleMove = (clientX, clientY) => {
+            if (!isTouching) return;
+            const p = screenToGrid(clientX, clientY);
+            recordInput(p.x, p.y);
+        };
+        const handleUp = () => { isTouching = false; lastInputX = -1; };
+
+        window.addEventListener('mousedown', e => handleDown(e.clientX, e.clientY));
+        window.addEventListener('mousemove', e => handleMove(e.clientX, e.clientY));
+        window.addEventListener('mouseup', handleUp);
+        window.addEventListener('touchstart', e => { handleDown(e.touches[0].clientX, e.touches[0].clientY); e.preventDefault(); }, { passive: false });
+        window.addEventListener('touchmove', e => { handleMove(e.touches[0].clientX, e.touches[0].clientY); e.preventDefault(); }, { passive: false });
+        window.addEventListener('touchend', handleUp);
+
+        function dropFood(cx, cy) {
+            const radius = 4;
+            const rCeil = Math.ceil(radius);
+            const minX = Math.max(1, Math.floor(cx - rCeil));
+            const maxX = Math.min(simW - 2, Math.ceil(cx + rCeil));
+            const minY = Math.max(1, Math.floor(cy - rCeil));
+            const maxY = Math.min(simH - 2, Math.ceil(cy + rCeil));
+
+            for (let y = minY; y <= maxY; y++) {
+                for (let x = minX; x <= maxX; x++) {
+                    const distSq = (cx - x) ** 2 + (cy - y) ** 2;
+                    if (distSq <= radius * radius) {
+                        const idx = y * simW + x;
+                        const intensity = 1.0 - Math.sqrt(distSq) / radius;
+                        // 食物具有极高的诱惑力基数
+                        foodGrid[idx] = Math.min(5.0, foodGrid[idx] + intensity * 2.0);
+                    }
+                }
+            }
+        }
+
+        // ==========================================
+        // 核心动力学
+        // ==========================================
+        function sense(x, y, angle) {
+            const sx = x + Math.cos(angle) * SENSE_DIST;
+            const sy = y + Math.sin(angle) * SENSE_DIST;
+            const px = Math.floor(sx);
+            const py = Math.floor(sy);
+            
+            if (px < 0 || px >= simW || py < 0 || py >= simH) return -1.0;
+            
+            const idx = py * simW + px;
+            // 嗅觉加权：食物的吸引力远大于同类的化学轨迹
+            return grid[idx] + foodGrid[idx] * 5.0; 
+        }
+
+        let time = 0;
+
+        function evolve() {
+            time += 0.05;
+
+            // 1. 处理食物注入
+            if (inputTrail.length > 0) {
+                for (let i = 0; i < inputTrail.length; i++) dropFood(inputTrail[i].x, inputTrail[i].y);
+                inputTrail = [];
+            }
+
+            // 2. 【核心】细胞质节律泵 (心跳机制)
+            // 产生一个在 -1 到 1 之间震荡的全局波，模拟黏菌内部压力的周期性起伏
+            const peristalsis = Math.sin(time * 1.5); 
+            // 速度在 0.6(舒张期) 到 2.4(收缩冲刺期) 之间脉动
+            const currentSpeed = 1.5 + peristalsis * 0.9; 
+            // 基础信息素分泌量随压力波同步跳动
+            const baseDeposit = 1.2 + peristalsis * 0.5;
+
+            // 3. 多主体寻路与移动
+            for (let i = 0; i < numAgents; i++) {
+                let x = agents[i * 3];
+                let y = agents[i * 3 + 1];
+                let angle = agents[i * 3 + 2];
+
+                // 嗅觉探测
+                const weightF = sense(x, y, angle);
+                const weightL = sense(x, y, angle - SENSE_ANGLE);
+                const weightR = sense(x, y, angle + SENSE_ANGLE);
+
+                const randomSteer = Math.random();
+
+                // 趋化性转向逻辑
+                if (weightF > weightL && weightF > weightR) {
+                    // 保持直行
+                } else if (weightF < weightL && weightF < weightR) {
+                    angle += (randomSteer > 0.5 ? TURN_ANGLE : -TURN_ANGLE);
+                } else if (weightL > weightR) {
+                    angle -= TURN_ANGLE;
+                } else if (weightR > weightL) {
+                    angle += TURN_ANGLE;
+                }
+
+                // 运用节律速度前进
+                x += Math.cos(angle) * currentSpeed;
+                y += Math.sin(angle) * currentSpeed;
+
+                // 边界软回弹：碰到培养皿边缘则调头
+                if (x < 1 || x >= simW - 1 || y < 1 || y >= simH - 1) {
+                    x = Math.max(1, Math.min(simW - 1.1, x));
+                    y = Math.max(1, Math.min(simH - 1.1, y));
+                    angle = Math.random() * Math.PI * 2;
+                }
+
+                agents[i * 3] = x;
+                agents[i * 3 + 1] = y;
+                agents[i * 3 + 2] = angle;
+
+                // 代谢与排泄
+                const idx = Math.floor(y) * simW + Math.floor(x);
+                let actualDeposit = baseDeposit;
+
+                // 摄食代谢激发：如果在食物区，大口吃掉食物，并留下极亮的发光轨迹
+                if (foodGrid[idx] > 0) {
+                    foodGrid[idx] = Math.max(0, foodGrid[idx] - 0.1); // 食物消耗
+                    actualDeposit *= 3.0; // 兴奋状态，轨迹加粗增亮
+                }
+
+                grid[idx] = Math.min(5.0, grid[idx] + actualDeposit);
+            }
+
+            // 4. 偏微分高斯模糊与挥发 (环境衰减)
+            for (let y = 1; y < simH - 1; y++) {
+                for (let x = 1; x < simW - 1; x++) {
+                    const idx = y * simW + x;
+                    
+                    // 3x3 均值核平滑模糊
+                    const sum = 
+                        grid[idx] + grid[idx - 1] + grid[idx + 1] +
+                        grid[idx - simW] + grid[idx + simW] +
+                        grid[idx - simW - 1] + grid[idx - simW + 1] +
+                        grid[idx + simW - 1] + grid[idx + simW + 1];
+
+                    // 扩散并按 DECAY 挥发
+                    nextGrid[idx] = (sum / 9.0) * DECAY;
+                }
+            }
+
+            // 交换双缓冲
+            const temp = grid; grid = nextGrid; nextGrid = temp;
+
+            // 5. 光谱映射渲染
+            const pixels = imageData.data;
+            const len = simW * simH;
+            
+            for (let i = 0; i < len; i++) {
+                const val = grid[i];
+                const food = foodGrid[i];
+                const p = i * 4;
+
+                // 黏菌基调：亮区为暖金，暗区为红褐
+                const r = Math.min(255, val * 180 + food * 100);
+                const g = Math.min(255, val * 110 + food * 20);
+                const b = Math.min(255, val * 25  + food * 60);
+
+                pixels[p] = r;
+                pixels[p + 1] = g;
+                pixels[p + 2] = b;
+                pixels[p + 3] = 255;
+            }
+
+            ctx.putImageData(imageData, 0, 0);
+            requestAnimationFrame(evolve);
+        }
+
+        evolve();
+    </script>
+</body>
+</html>
