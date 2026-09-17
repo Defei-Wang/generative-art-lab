@@ -2,80 +2,140 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>互动 L-System 变异植物</title>
     <style>
-        body { margin: 0; overflow: hidden; background: #0a0a0a; }
-        canvas { display: block; }
-        #info { position: absolute; bottom: 20px; left: 20px; color: #00ffcc; font-family: monospace; pointer-events: none; }
+        body { 
+            margin: 0; 
+            overflow: hidden; 
+            background: #0a0a0a; 
+            touch-action: none; 
+            width: 100vw; 
+            height: 100vh; 
+        }
+        canvas { 
+            display: block; 
+            width: 100%; 
+            height: 100%; 
+        }
+        #info { 
+            position: absolute; 
+            bottom: 25px; 
+            left: 20px; 
+            color: #00ffcc; 
+            font-family: monospace; 
+            pointer-events: none; 
+            font-size: 12px; 
+            line-height: 1.6;
+            text-shadow: 0 1px 3px #000;
+        }
     </style>
 </head>
 <body>
-    <div id="info">交互：移动鼠标或滑动触摸以改变拓扑基因<br>ANGLE: <span id="ang"></span> | SCALE: <span id="sca"></span></div>
+    <div id="info">
+        L-SYSTEM RECURSIVE PLANT<br>
+        交互：向上滑动拔高生长 / 左右滑动展开枝冠<br>
+        SPREAD: <span id="ang"></span> | GROWTH: <span id="sca"></span>
+    </div>
     <canvas id="treeCanvas"></canvas>
+
     <script>
         const canvas = document.getElementById('treeCanvas');
         const ctx = canvas.getContext('2d');
         const angDisp = document.getElementById('ang');
         const scaDisp = document.getElementById('sca');
         
-        let width = canvas.width = window.innerWidth;
-        let height = canvas.height = window.innerHeight;
-        
-        let mouseX = width / 2;
-        let mouseY = height / 2;
+        let width = 0, height = 0;
+        let mouseX = 0, mouseY = 0;
+        let targetAngle = 0.45; // 弧度基准
+        let targetScale = 0.65; // 缩放比例
+        let curAngle = targetAngle;
+        let curScale = targetScale;
         let time = 0;
+        let isTouching = false;
 
-        window.addEventListener('mousemove', e => { mouseX = e.clientX; mouseY = e.clientY; });
-        window.addEventListener('touchmove', e => { mouseX = e.touches[0].clientX; mouseY = e.touches[0].clientY; e.preventDefault(); }, {passive: false});
-        window.addEventListener('resize', () => { width = canvas.width = window.innerWidth; height = canvas.height = window.innerHeight; });
+        function resize() {
+            width = canvas.width = window.innerWidth;
+            height = canvas.height = window.innerHeight;
+            if (!isTouching) {
+                mouseX = width / 2;
+                mouseY = height * 0.45;
+            }
+        }
+        window.addEventListener('resize', resize);
+        resize();
+
+        function updateInput(clientX, clientY) {
+            isTouching = true;
+            mouseX = clientX;
+            mouseY = clientY;
+
+            // 【核心修正 1：Y轴反转】手指往上划 (mouseY 变小)，生长比例反而增大！
+            const normY = 1.0 - Math.min(Math.max(mouseY / height, 0.1), 0.9);
+            targetScale = 0.48 + normY * 0.28; // 范围 0.48 ~ 0.76
+
+            // 【核心修正 2：居中张角】从屏幕中间向两侧滑动，树冠对称张开
+            const centerDist = Math.abs(mouseX - width / 2) / (width / 2);
+            targetAngle = 0.15 + centerDist * 0.75; // 范围约 8° ~ 51°
+        }
+
+        window.addEventListener('mousemove', e => updateInput(e.clientX, e.clientY));
+        window.addEventListener('touchmove', e => { 
+            updateInput(e.touches[0].clientX, e.touches[0].clientY); 
+            e.preventDefault(); 
+        }, {passive: false});
+        window.addEventListener('touchstart', e => updateInput(e.touches[0].clientX, e.touches[0].clientY), {passive: false});
+        window.addEventListener('touchend', () => { isTouching = false; });
 
         function drawBranch(len, depth) {
-            // 绘制当前树枝
             ctx.beginPath();
             ctx.moveTo(0, 0);
             ctx.lineTo(0, -len);
             ctx.stroke();
-            ctx.translate(0, -len); // 将坐标系移动到树枝末端
+            ctx.translate(0, -len);
 
-            if (depth === 0) return; // 递归终止条件
+            if (depth === 0) return;
 
-            // 交互映射：鼠标 X 轴控制分叉角度，Y 轴控制子枝干缩放比例
-            const maxAngle = (mouseX / width) * Math.PI; 
-            const branchScale = 0.4 + (mouseY / height) * 0.35;
-            
-            // 引入时间变量模拟微风吹拂的有机感
-            const wind = Math.sin(time + depth) * 0.05;
+            // 微风摇曳模拟
+            const wind = Math.sin(time + depth * 0.8) * 0.03;
 
-            // 绘制右侧分支
+            // 右侧分支
             ctx.save();
-            ctx.rotate(maxAngle + wind);
-            // 颜色随深度变化，产生生物发光质感
-            ctx.strokeStyle = `hsl(${depth * 25 + time * 50}, 100%, 60%)`;
-            ctx.lineWidth = depth * 0.8;
-            drawBranch(len * branchScale, depth - 1);
+            ctx.rotate(curAngle + wind);
+            ctx.strokeStyle = `hsl(${depth * 28 + time * 30}, 100%, 65%)`;
+            ctx.lineWidth = Math.max(depth * 0.7, 0.8);
+            drawBranch(len * curScale, depth - 1);
             ctx.restore();
 
-            // 绘制左侧分支
+            // 左侧分支
             ctx.save();
-            ctx.rotate(-maxAngle + wind);
-            ctx.strokeStyle = `hsl(${depth * 25 + time * 50 + 120}, 100%, 60%)`;
-            ctx.lineWidth = depth * 0.8;
-            drawBranch(len * branchScale, depth - 1);
+            ctx.rotate(-curAngle + wind);
+            ctx.strokeStyle = `hsl(${depth * 28 + time * 30 + 120}, 100%, 65%)`;
+            ctx.lineWidth = Math.max(depth * 0.7, 0.8);
+            drawBranch(len * curScale, depth - 1);
             ctx.restore();
         }
 
         function render() {
-            ctx.fillStyle = 'rgba(10, 10, 10, 0.3)'; // 动态残影
+            // 平滑插值消除手部抖动
+            curAngle += (targetAngle - curAngle) * 0.08;
+            curScale += (targetScale - curScale) * 0.08;
+
+            ctx.fillStyle = 'rgba(10, 10, 10, 0.35)';
             ctx.fillRect(0, 0, width, height);
 
-            angDisp.innerText = ((mouseX / width) * 180).toFixed(1) + '°';
-            scaDisp.innerText = (0.4 + (mouseY / height) * 0.35).toFixed(2);
+            angDisp.innerText = ((curAngle / Math.PI) * 180).toFixed(1) + '°';
+            scaDisp.innerText = curScale.toFixed(2);
 
             ctx.save();
-            ctx.translate(width / 2, height); // 将根部定在屏幕底部中央
-            ctx.strokeStyle = '#fff';
-            ctx.lineWidth = 10;
-            drawBranch(height * 0.3, 10); // 10次递归迭代
+            // 根部放置在底部稍偏上 30px，给留白和UI腾出呼吸感
+            ctx.translate(width / 2, height - 20);
+            ctx.strokeStyle = '#ffffff';
+            ctx.lineWidth = 6;
+            
+            // 主干高度自适应屏幕尺寸，长屏手机不再出现过长大白杆
+            const trunkLen = Math.min(height * 0.22, 160);
+            drawBranch(trunkLen, 9); // 9级递归在手机上帧率最饱满稳定
             ctx.restore();
 
             time += 0.02;
@@ -85,4 +145,3 @@
     </script>
 </body>
 </html>
-
