@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>互动 L-System - 矢量发丝锐度版</title>
+    <title>互动 L-System - 动态长宽比版</title>
     <style>
         body { 
             margin: 0; 
@@ -35,9 +35,9 @@
 </head>
 <body>
     <div id="info">
-        L-SYSTEM // VECTOR INVERSE-SCALE<br>
-        状态：<span class="highlight">发丝级微距线宽 / 绝对完整可视</span><br>
-        交互：拖拽屏幕改变生长拓扑<br>
+        L-SYSTEM // SLENDER-RATIO ENGINE<br>
+        状态：<span class="highlight">长宽比动态绑定 / 幼态极细修正</span><br>
+        交互：底部稀疏纤细 / 顶部粗壮繁茂<br>
         ANGLE: <span id="ang"></span> | SCALE: <span id="sca"></span>
     </div>
     <canvas id="treeCanvas"></canvas>
@@ -68,7 +68,7 @@
 
             if (mouseX === 0 && mouseY === 0) {
                 mouseX = width * 0.4;
-                mouseY = height * 0.45;
+                mouseY = height * 0.65;
             }
         }
         window.addEventListener('resize', resize);
@@ -88,7 +88,7 @@
             setPointer(e.touches[0].clientX, e.touches[0].clientY);
         }, { passive: false });
 
-        // 包围盒预测计算
+        // 几何包围盒预演
         let bMinX = 0, bMaxX = 0, bMinY = 0, bMaxY = 0;
 
         function computeBounds(x, y, angle, len, depth, branchAngle, branchScale) {
@@ -107,8 +107,8 @@
             computeBounds(x2, y2, angle - branchAngle, nextLen, depth - 1, branchAngle, branchScale);
         }
 
-        // 递归渲染管线
-        function drawBranch(len, depth, branchAngle, branchScale) {
+        // 递归渲染核心
+        function drawBranch(len, depth, branchAngle, branchScale, thicknessFactor) {
             ctx.beginPath();
             ctx.moveTo(0, 0);
             ctx.lineTo(0, -len);
@@ -119,21 +119,21 @@
 
             const wind = Math.sin(time + depth * 0.7) * 0.018;
 
-            // 核心修复：线宽逆缩放补偿
-            // 确保在屏幕物理尺寸下，末梢细如发丝 (0.5px)，接近根部也仅 1.8px
-            const targetScreenPixels = Math.max(0.5, depth * 0.16);
-            ctx.lineWidth = targetScreenPixels / smoothScale;
+            // 核心修复：线宽严格与当前分支物理长度 len 绑定，并随生长态因子调节
+            // 确保短分支始终呈细丝状，彻底杜绝粗短方块柱
+            const dynamicWidth = len * 0.038 * thicknessFactor;
+            ctx.lineWidth = Math.max(dynamicWidth, 0.5 / smoothScale);
 
             ctx.save();
             ctx.rotate(branchAngle + wind);
             ctx.strokeStyle = `hsl(${depth * 24 + time * 35}, 100%, 65%)`;
-            drawBranch(len * branchScale, depth - 1, branchAngle, branchScale);
+            drawBranch(len * branchScale, depth - 1, branchAngle, branchScale, thicknessFactor);
             ctx.restore();
 
             ctx.save();
             ctx.rotate(-branchAngle + wind);
             ctx.strokeStyle = `hsl(${depth * 24 + time * 35 + 120}, 100%, 65%)`;
-            drawBranch(len * branchScale, depth - 1, branchAngle, branchScale);
+            drawBranch(len * branchScale, depth - 1, branchAngle, branchScale, thicknessFactor);
             ctx.restore();
         }
 
@@ -144,12 +144,16 @@
             ctx.fillRect(0, 0, width, height);
 
             const branchAngle = (mouseX / width) * (Math.PI * 0.75); 
-            const branchScale = 0.42 + (1.0 - mouseY / height) * 0.33;
+            const growthNorm = 1.0 - mouseY / height; // 0.0 (底端幼态) 到 1.0 (顶端盛态)
+            const branchScale = 0.42 + growthNorm * 0.33;
+
+            // 幼态纤细因子：手指在底部时线宽压降至 45%，在顶部时恢复 100%
+            const thicknessFactor = 0.45 + growthNorm * 0.55;
 
             angDisp.innerText = ((mouseX / width) * 135).toFixed(1) + '°';
             scaDisp.innerText = branchScale.toFixed(2);
 
-            // 几何边界测量
+            // 动态视口校准
             const baseTrunk = 100;
             bMinX = 0; bMaxX = 0; bMinY = -baseTrunk; bMaxY = 0;
             computeBounds(0, 0, 0, baseTrunk, 10, branchAngle, branchScale);
@@ -159,7 +163,6 @@
             const centerX = (bMinX + bMaxX) / 2;
             const centerY = (bMinY + bMaxY) / 2;
 
-            // 目标视口缩放比
             const targetFitScale = Math.min((width * 0.82) / treeW, (height * 0.72) / treeH);
 
             smoothScale += (targetFitScale - smoothScale) * 0.12;
@@ -171,14 +174,13 @@
             ctx.scale(smoothScale, smoothScale);
             ctx.translate(-smoothCenterX, -smoothCenterY);
 
-            // 圆角线头，平滑微观接缝
             ctx.lineCap = 'round';
             ctx.lineJoin = 'round';
 
-            // 主干线宽逆补偿：在屏幕上恒定为 2.2 像素，杜绝实心白块
+            // 主干线宽保持长宽比一致
             ctx.strokeStyle = '#ffffff';
-            ctx.lineWidth = 2.2 / smoothScale;
-            drawBranch(baseTrunk, 11, branchAngle, branchScale);
+            ctx.lineWidth = Math.max(baseTrunk * 0.045 * thicknessFactor, 1.0 / smoothScale);
+            drawBranch(baseTrunk, 11, branchAngle, branchScale, thicknessFactor);
             ctx.restore();
 
             time += 0.02;
