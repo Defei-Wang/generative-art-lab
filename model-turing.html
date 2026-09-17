@@ -3,270 +3,148 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>图灵斑图 (Reaction-Diffusion) - 黏菌仿生弧线连续版</title>
+    <title>Generative Art Lab</title>
     <style>
-        body { 
-            margin: 0; 
-            overflow: hidden; 
-            background: #000; 
-            touch-action: none; 
-            width: 100vw; 
-            height: 100vh; 
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body, html {
+            width: 100vw;
+            height: 100vh;
+            overflow: hidden;
+            background: #000;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, monospace;
         }
-        canvas { 
-            display: block; 
-            width: 100vw; 
-            height: 100vh; 
+
+        /* 顶部自适应导航容器 */
+        header {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 52px;
+            background: rgba(10, 10, 14, 0.85);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 16px;
+            z-index: 100;
         }
-        #ui { 
-            position: absolute; 
-            top: 20px; 
-            left: 20px; 
-            color: rgba(220, 210, 180, 0.75); 
-            font-family: monospace; 
-            font-size: 12px; 
-            pointer-events: none; 
-            text-shadow: 0 1px 3px #000;
-            line-height: 1.6; 
+
+        .brand {
+            color: #00ffcc;
+            font-size: 11px;
+            font-weight: 700;
+            letter-spacing: 1.5px;
+            text-transform: uppercase;
+            white-space: nowrap;
         }
-        .highlight { color: #d4b124; font-weight: bold; }
+
+        /* 支持横向触控滑动的标签栏 */
+        .nav-scroller {
+            display: flex;
+            gap: 8px;
+            overflow-x: auto;
+            scrollbar-width: none;
+            -ms-overflow-style: none;
+            padding: 4px 0;
+            margin-left: 16px;
+        }
+        .nav-scroller::-webkit-scrollbar { display: none; }
+
+        .nav-btn {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            color: #888;
+            padding: 6px 12px;
+            font-size: 11px;
+            font-family: monospace;
+            border-radius: 4px;
+            cursor: pointer;
+            white-space: nowrap;
+            transition: all 0.2s ease;
+        }
+        .nav-btn:hover {
+            color: #fff;
+            border-color: rgba(255, 255, 255, 0.4);
+        }
+        .nav-btn.active {
+            color: #ff3366;
+            border-color: #ff3366;
+            background: rgba(255, 51, 102, 0.12);
+            box-shadow: 0 0 10px rgba(255, 51, 102, 0.2);
+        }
+
+        /* 渲染主视口 */
+        #viewport {
+            width: 100vw;
+            height: 100vh;
+            border: none;
+            display: block;
+            background: #000;
+        }
     </style>
 </head>
 <body>
-    <div id="ui">
-        TURING PATTERN // PHYSARUM POLYCEPHALUM<br>
-        拟态：<span class="highlight">多头绒泡菌 (黏菌原生质微观着色)</span><br>
-        交互：高频高曲率手势重构，杜绝折线分段
-    </div>
-    <canvas id="rdCanvas"></canvas>
+    <header>
+        <div class="brand">Art Lab</div>
+        <nav class="nav-scroller" id="navContainer"></nav>
+    </header>
+
+    <iframe id="viewport" allow="accelerometer; camera; gyroscope; microphone"></iframe>
 
     <script>
-        const canvas = document.getElementById('rdCanvas');
-        const ctx = canvas.getContext('2d', { alpha: false });
+        // ============================================================
+        // 核心配置注册表：后续新增文件只需在此数组中增加一项，无需修改 HTML！
+        // ============================================================
+        const CONFIG_MODELS = [
+            { id: 'life',     name: 'PARTICLE LIFE',  file: 'model-life.html' },
+            { id: 'tree',     name: 'L-SYSTEM',       file: 'model-tree.html' },
+            { id: 'turing',   name: 'TURING PATTERN', file: 'model-turing.html' },
+            { id: 'clifford', name: 'CLIFFORD FLUID', file: 'model-clifford.html' }
+            // 后续加入新实验，直接在下方追加，例如：
+            // { id: 'fluid', name: 'NAVIER STOKES', file: 'model-fluid.html' },
+        ];
 
-        const Da = 1.0;     
-        const Db = 0.5;     
-        const f = 0.0545;   
-        const k = 0.0620;   
+        const navContainer = document.getElementById('navContainer');
+        const viewport = document.getElementById('viewport');
+        const buttonsMap = new Map();
 
-        let simW = 0, simH = 0;
-        let grid = null;
-        let next = null;
-        let imageData = null;
+        // 动态分发视口加载，强制携带时间戳摧毁缓存
+        function switchModel(model, pushHash = true) {
+            viewport.src = model.file + '?t=' + Date.now();
 
-        function initSimulation() {
-            const screenW = window.innerWidth;
-            const screenH = window.innerHeight;
-            const aspect = screenW / screenH;
+            buttonsMap.forEach((btn, id) => {
+                btn.classList.toggle('active', id === model.id);
+            });
 
-            if (aspect >= 1.0) {
-                simH = 260;
-                simW = Math.round(260 * aspect);
-            } else {
-                simW = 260;
-                simH = Math.round(260 / aspect);
-            }
-
-            canvas.width = simW;
-            canvas.height = simH;
-
-            const totalCells = simW * simH;
-            grid = new Float32Array(totalCells * 2);
-            next = new Float32Array(totalCells * 2);
-            imageData = ctx.createImageData(simW, simH);
-
-            for (let i = 0; i < totalCells; i++) {
-                grid[i * 2] = 1.0;
-                grid[i * 2 + 1] = 0.0;
-            }
-
-            const cx = Math.floor(simW / 2);
-            const cy = Math.floor(simH / 2);
-            const seedR = 8;
-            for (let y = cy - seedR; y <= cy + seedR; y++) {
-                for (let x = cx - seedR; x <= cx + seedR; x++) {
-                    if ((x - cx) ** 2 + (y - cy) ** 2 <= seedR * seedR) {
-                        grid[(y * simW + x) * 2 + 1] = 0.8;
-                    }
-                }
+            if (pushHash) {
+                history.replaceState(null, '', '#' + model.id);
             }
         }
 
-        initSimulation();
-        window.addEventListener('resize', initSimulation);
+        // 自动构建导航界面
+        function buildInterface() {
+            navContainer.innerHTML = '';
+            
+            CONFIG_MODELS.forEach((model) => {
+                const btn = document.createElement('button');
+                btn.className = 'nav-btn';
+                btn.innerText = model.name;
+                btn.onclick = () => switchModel(model);
+                
+                navContainer.appendChild(btn);
+                buttonsMap.set(model.id, btn);
+            });
 
-        // 亚像素高频路径队列：捕获触控原生曲率
-        let inputTrail = [];
-        let isTouching = false;
-        let lastInputX = -1, lastInputY = -1;
-
-        function screenToGrid(clientX, clientY) {
-            const rect = canvas.getBoundingClientRect();
-            return {
-                x: ((clientX - rect.left) / rect.width) * simW,
-                y: ((clientY - rect.top) / rect.height) * simH
-            };
+            // 支持 URL Hash 路由（例如通过域名访问 direct link: .../#turing）
+            const hash = window.location.hash.replace('#', '');
+            const target = CONFIG_MODELS.find(m => m.id === hash) || CONFIG_MODELS[0];
+            switchModel(target, false);
         }
 
-        function recordInput(cx, cy) {
-            if (lastInputX < 0) {
-                inputTrail.push({ x: cx, y: cy });
-            } else {
-                const dist = Math.hypot(cx - lastInputX, cy - lastInputY);
-                // 细分步长设为 0.8 个网格单元，沿手势切线高频填充，保证圆弧平滑过渡
-                const steps = Math.max(1, Math.ceil(dist / 0.8));
-                for (let s = 1; s <= steps; s++) {
-                    const t = s / steps;
-                    inputTrail.push({
-                        x: lastInputX + (cx - lastInputX) * t,
-                        y: lastInputY + (cy - lastInputY) * t
-                    });
-                }
-            }
-            lastInputX = cx;
-            lastInputY = cy;
-        }
-
-        window.addEventListener('mousedown', (e) => {
-            isTouching = true;
-            lastInputX = -1;
-            const p = screenToGrid(e.clientX, e.clientY);
-            recordInput(p.x, p.y);
-        });
-
-        window.addEventListener('mousemove', (e) => {
-            if (!isTouching) return;
-            const p = screenToGrid(e.clientX, e.clientY);
-            recordInput(p.x, p.y);
-        });
-
-        const stopDrawing = () => {
-            isTouching = false;
-            lastInputX = -1;
-        };
-
-        window.addEventListener('mouseup', stopDrawing);
-        window.addEventListener('mouseleave', stopDrawing);
-
-        window.addEventListener('touchstart', (e) => {
-            isTouching = true;
-            lastInputX = -1;
-            const p = screenToGrid(e.touches[0].clientX, e.touches[0].clientY);
-            recordInput(p.x, p.y);
-            e.preventDefault();
-        }, { passive: false });
-
-        window.addEventListener('touchmove', (e) => {
-            if (!isTouching) return;
-            const p = screenToGrid(e.touches[0].clientX, e.touches[0].clientY);
-            recordInput(p.x, p.y);
-            e.preventDefault();
-        }, { passive: false });
-
-        window.addEventListener('touchend', stopDrawing);
-
-        // 局部软核渗透注入
-        function inject(cx, cy) {
-            const brushR = 2.6;
-            const rCeil = Math.ceil(brushR);
-            const minX = Math.max(1, Math.floor(cx - rCeil));
-            const maxX = Math.min(simW - 2, Math.ceil(cx + rCeil));
-            const minY = Math.max(1, Math.floor(cy - rCeil));
-            const maxY = Math.min(simH - 2, Math.ceil(cy + rCeil));
-
-            for (let py = minY; py <= maxY; py++) {
-                for (let px = minX; px <= maxX; px++) {
-                    const distSq = (cx - px) ** 2 + (cy - py) ** 2;
-                    if (distSq <= brushR * brushR) {
-                        const falloff = 1.0 - Math.sqrt(distSq) / brushR;
-                        const idx = (py * simW + px) * 2;
-                        grid[idx] = Math.max(0.12, grid[idx] - falloff * 0.26);
-                        grid[idx + 1] = Math.min(0.82, grid[idx + 1] + falloff * 0.36);
-                    }
-                }
-            }
-        }
-
-        function evolve() {
-            // 清空并执行本帧累积的高曲率轨迹
-            if (inputTrail.length > 0) {
-                for (let i = 0; i < inputTrail.length; i++) {
-                    inject(inputTrail[i].x, inputTrail[i].y);
-                }
-                inputTrail = [];
-            }
-
-            const w2 = simW * 2;
-            for (let step = 0; step < 7; step++) {
-                for (let y = 1; y < simH - 1; y++) {
-                    const row = y * w2;
-                    const rowUp = row - w2;
-                    const rowDown = row + w2;
-
-                    for (let x = 1; x < simW - 1; x++) {
-                        const idx = row + (x * 2);
-                        const a = grid[idx];
-                        const b = grid[idx + 1];
-
-                        let lapA = a * -1.0;
-                        let lapB = b * -1.0;
-
-                        lapA += (grid[idx - 2] + grid[idx + 2] + grid[rowUp + x * 2] + grid[rowDown + x * 2]) * 0.2;
-                        lapB += (grid[idx - 1] + grid[idx + 3] + grid[rowUp + x * 2 + 1] + grid[rowDown + x * 2 + 1]) * 0.2;
-
-                        lapA += (grid[rowUp + (x - 1) * 2] + grid[rowUp + (x + 1) * 2] + 
-                                 grid[rowDown + (x - 1) * 2] + grid[rowDown + (x + 1) * 2]) * 0.05;
-                        lapB += (grid[rowUp + (x - 1) * 2 + 1] + grid[rowUp + (x + 1) * 2 + 1] + 
-                                 grid[rowDown + (x - 1) * 2 + 1] + grid[rowDown + (x + 1) * 2 + 1]) * 0.05;
-
-                        const abb = a * b * b;
-
-                        next[idx] = Math.max(0.0, Math.min(1.0, a + (Da * lapA - abb + f * (1.0 - a))));
-                        next[idx + 1] = Math.max(0.0, Math.min(1.0, b + (Db * lapB + abb - (k + f) * b)));
-                    }
-                }
-
-                // 诺伊曼边界零通量同步
-                for (let y = 0; y < simH; y++) {
-                    const r = y * w2;
-                    next[r] = next[r + 2];
-                    next[r + 1] = next[r + 3];
-                    next[r + (simW - 1) * 2] = next[r + (simW - 2) * 2];
-                    next[r + (simW - 1) * 2 + 1] = next[r + (simW - 2) * 2 + 1];
-                }
-                for (let x = 0; x < simW; x++) {
-                    const top = x * 2;
-                    const btm = (simH - 1) * w2 + x * 2;
-                    next[top] = next[w2 + top];
-                    next[top + 1] = next[w2 + top + 1];
-                    next[btm] = next[btm - w2];
-                    next[btm + 1] = next[btm - w2 + 1];
-                }
-
-                const temp = grid; grid = next; next = temp;
-            }
-
-            // 黏菌光谱传递函数（Physarum polycephalum 真实色彩矩阵）
-            const pixels = imageData.data;
-            const len = simW * simH;
-            for (let i = 0; i < len; i++) {
-                const val = grid[i * 2] - grid[i * 2 + 1];
-                // 活性指数 u：0.0 代表未生长底质，1.0 代表厚实黏菌假足脉络
-                const u = Math.max(0.0, Math.min(1.0, (0.86 - val) * 1.38));
-                const p = i * 4;
-
-                // 拟真色彩：深暗苔质土壤底色 -> 暗芥黄 -> 哑光琥珀金脉络
-                pixels[p]     = 14 + u * 196;                                    // R: 适度暖调红原色
-                pixels[p + 1] = 15 + u * 168 + Math.sin(u * Math.PI) * 15;       // G: 带有有机草木与原生质绿感
-                pixels[p + 2] = 12 + Math.pow(u, 2.2) * 35;                      // B: 极深度抑制，彻底杜绝刺眼强光
-                pixels[p + 3] = 255;
-            }
-
-            ctx.putImageData(imageData, 0, 0);
-            requestAnimationFrame(evolve);
-        }
-
-        evolve();
+        buildInterface();
     </script>
 </body>
 </html>
