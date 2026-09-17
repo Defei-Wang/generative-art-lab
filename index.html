@@ -3,191 +3,148 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Generative Art Lab | 生成艺术实验室</title>
+    <title>Generative Art Lab</title>
     <style>
-        body { 
-            margin: 0; 
-            padding: 0; 
-            background: #050505; 
-            color: #eee; 
-            font-family: 'Helvetica Neue', Helvetica, monospace; 
-            overflow: hidden; 
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body, html {
+            width: 100vw;
             height: 100vh;
+            overflow: hidden;
+            background: #000;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, monospace;
         }
-        
+
+        /* 顶部自适应导航容器 */
         header {
-            position: absolute;
+            position: fixed;
             top: 0;
             left: 0;
             width: 100%;
-            height: 60px;
-            background: rgba(10, 10, 10, 0.85);
-            backdrop-filter: blur(10px);
-            -webkit-backdrop-filter: blur(10px);
+            height: 52px;
+            background: rgba(10, 10, 14, 0.85);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
             border-bottom: 1px solid rgba(255, 255, 255, 0.1);
             display: flex;
             align-items: center;
             justify-content: space-between;
-            padding: 0 15px;
-            box-sizing: border-box;
+            padding: 0 16px;
             z-index: 100;
-            transition: transform 0.3s ease;
-        }
-
-        /* 隐藏顶部栏时的状态 */
-        header.hide {
-            transform: translateY(-100%);
         }
 
         .brand {
-            font-size: 13px;
-            letter-spacing: 2px;
-            font-weight: bold;
-            color: #fff;
+            color: #00ffcc;
+            font-size: 11px;
+            font-weight: 700;
+            letter-spacing: 1.5px;
+            text-transform: uppercase;
+            white-space: nowrap;
         }
 
-        .brand span { color: #00ffcc; }
-
-        .nav-buttons {
+        /* 支持横向触控滑动的标签栏 */
+        .nav-scroller {
             display: flex;
             gap: 8px;
+            overflow-x: auto;
+            scrollbar-width: none;
+            -ms-overflow-style: none;
+            padding: 4px 0;
+            margin-left: 16px;
         }
+        .nav-scroller::-webkit-scrollbar { display: none; }
 
-        button {
-            background: transparent;
-            border: 1px solid rgba(255, 255, 255, 0.2);
-            color: rgba(255, 255, 255, 0.6);
-            padding: 6px 12px;
-            font-size: 11px;
-            letter-spacing: 1px;
-            border-radius: 4px;
-            cursor: pointer;
-            transition: all 0.3s ease;
-            font-family: monospace;
-        }
-
-        button.active {
-            border-color: #ff3366;
-            color: #ff3366;
-            background: rgba(255, 51, 102, 0.1);
-        }
-
-        /* 沉浸模式切换按钮 */
-        .fs-toggle {
-            position: absolute;
-            top: 70px;
-            right: 15px;
-            z-index: 90;
-            background: rgba(20, 20, 20, 0.6);
+        .nav-btn {
+            background: rgba(255, 255, 255, 0.05);
             border: 1px solid rgba(255, 255, 255, 0.15);
             color: #888;
-            font-size: 10px;
-            padding: 5px 8px;
+            padding: 6px 12px;
+            font-size: 11px;
+            font-family: monospace;
             border-radius: 4px;
             cursor: pointer;
-            backdrop-filter: blur(4px);
+            white-space: nowrap;
+            transition: all 0.2s ease;
+        }
+        .nav-btn:hover {
+            color: #fff;
+            border-color: rgba(255, 255, 255, 0.4);
+        }
+        .nav-btn.active {
+            color: #ff3366;
+            border-color: #ff3366;
+            background: rgba(255, 51, 102, 0.12);
+            box-shadow: 0 0 10px rgba(255, 51, 102, 0.2);
         }
 
+        /* 渲染主视口 */
         #viewport {
-            position: absolute;
-            top: 60px;
-            left: 0;
             width: 100vw;
-            height: calc(100vh - 60px);
-            border: none;
-            background: #000;
-            transition: all 0.3s ease;
-        }
-
-        #viewport.fullscreen {
-            top: 0;
             height: 100vh;
-        }
-
-        #loader {
-            position: absolute;
-            top: 60px;
-            left: 0;
-            width: 100%;
-            height: calc(100vh - 60px);
-            background: #050505;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            z-index: 50;
-            color: #00ffcc;
-            font-family: monospace;
-            font-size: 13px;
-            letter-spacing: 2px;
-            transition: opacity 0.4s ease;
-            pointer-events: none;
-        }
-
-        @media (max-width: 768px) {
-            header {
-                flex-direction: column;
-                height: auto;
-                padding: 10px 8px;
-            }
-            .brand { margin-bottom: 8px; }
-            .nav-buttons {
-                flex-wrap: wrap;
-                justify-content: center;
-            }
-            #viewport, #loader {
-                top: 85px;
-                height: calc(100vh - 85px);
-            }
-            .fs-toggle { top: 95px; }
+            border: none;
+            display: block;
+            background: #000;
         }
     </style>
 </head>
 <body>
-
-    <header id="header">
-        <div class="brand">GENERATIVE <span>ART LAB</span></div>
-        <div class="nav-buttons">
-            <button onclick="loadModel('model-life.html', this)" class="active">PARTICLE LIFE</button>
-            <button onclick="loadModel('model-tree.html', this)">L-SYSTEM</button>
-            <button onclick="loadModel('model-turing.html', this)">TURING PATTERN</button>
-            <button onclick="loadModel('model-clifford.html', this)">CLIFFORD FLUID</button>
-        </div>
+    <header>
+        <div class="brand">Art Lab</div>
+        <nav class="nav-scroller" id="navContainer"></nav>
     </header>
 
-    <div class="fs-toggle" onclick="toggleImmersive()">[沉浸模式]</div>
-    <div id="loader">INITIALIZING KERNEL...</div>
-    <iframe id="viewport" src="model-life.html"></iframe>
+    <iframe id="viewport" allow="accelerometer; camera; gyroscope; microphone"></iframe>
 
     <script>
-        const iframe = document.getElementById('viewport');
-        const loader = document.getElementById('loader');
-        const header = document.getElementById('header');
+        // ============================================================
+        // 核心配置注册表：后续新增文件只需在此数组中增加一项，无需修改 HTML！
+        // ============================================================
+        const CONFIG_MODELS = [
+            { id: 'life',     name: 'PARTICLE LIFE',  file: 'model-life.html' },
+            { id: 'tree',     name: 'L-SYSTEM',       file: 'model-tree.html' },
+            { id: 'turing',   name: 'TURING PATTERN', file: 'model-turing.html' },
+            { id: 'clifford', name: 'CLIFFORD FLUID', file: 'model-clifford.html' }
+            // 后续加入新实验，直接在下方追加，例如：
+            // { id: 'fluid', name: 'NAVIER STOKES', file: 'model-fluid.html' },
+        ];
 
-        iframe.addEventListener('load', () => {
-            loader.style.opacity = '0';
-        });
+        const navContainer = document.getElementById('navContainer');
+        const viewport = document.getElementById('viewport');
+        const buttonsMap = new Map();
 
-        function loadModel(url, btnElement) {
-            loader.style.opacity = '1';
-            loader.innerText = 'COMPILING ALGORITHM...';
+        // 动态分发视口加载，强制携带时间戳摧毁缓存
+        function switchModel(model, pushHash = true) {
+            viewport.src = model.file + '?t=' + Date.now();
 
-            const buttons = document.querySelectorAll('.nav-buttons button');
-            buttons.forEach(btn => btn.classList.remove('active'));
-            btnElement.classList.add('active');
+            buttonsMap.forEach((btn, id) => {
+                btn.classList.toggle('active', id === model.id);
+            });
 
-            setTimeout(() => {
-                iframe.src = url;
-            }, 40);
+            if (pushHash) {
+                history.replaceState(null, '', '#' + model.id);
+            }
         }
 
-        // 沉浸模式切换：收起导航栏，让 iframe 真正 100% 占满手机屏幕
-        let isImmersive = false;
-        function toggleImmersive() {
-            isImmersive = !isImmersive;
-            header.classList.toggle('hide', isImmersive);
-            iframe.classList.toggle('fullscreen', isImmersive);
-            document.querySelector('.fs-toggle').innerText = isImmersive ? '[显示导航]' : '[沉浸模式]';
+        // 自动构建导航界面
+        function buildInterface() {
+            navContainer.innerHTML = '';
+            
+            CONFIG_MODELS.forEach((model) => {
+                const btn = document.createElement('button');
+                btn.className = 'nav-btn';
+                btn.innerText = model.name;
+                btn.onclick = () => switchModel(model);
+                
+                navContainer.appendChild(btn);
+                buttonsMap.set(model.id, btn);
+            });
+
+            // 支持 URL Hash 路由（例如通过域名访问 direct link: .../#turing）
+            const hash = window.location.hash.replace('#', '');
+            const target = CONFIG_MODELS.find(m => m.id === hash) || CONFIG_MODELS[0];
+            switchModel(target, false);
         }
+
+        buildInterface();
     </script>
 </body>
 </html>
