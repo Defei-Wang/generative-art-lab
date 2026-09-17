@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>互动 L-System - 视网膜高清与手势隔离版</title>
+    <title>互动 L-System - 极致锐度与视口校准版</title>
     <style>
         body { 
             margin: 0; 
@@ -18,31 +18,32 @@
             width: 100%; 
             height: 100%; 
         }
+        /* 避开手机底部手势条与虚拟按键 */
         #info { 
             position: absolute; 
-            bottom: 25px; 
-            left: 20px; 
+            bottom: 75px; 
+            left: 15px; 
             color: #00ffcc; 
             font-family: monospace; 
             pointer-events: none; 
             font-size: 11px; 
-            line-height: 1.8;
+            line-height: 1.7;
             text-shadow: 0 1px 4px #000;
             z-index: 10;
         }
         .hud-panel {
             position: absolute;
-            bottom: 25px;
-            right: 20px;
+            bottom: 75px;
+            right: 15px;
             display: flex;
-            gap: 10px;
+            gap: 8px;
             z-index: 20;
         }
         button {
-            background: rgba(20, 20, 25, 0.7);
-            border: 1px solid rgba(255, 255, 255, 0.3);
-            color: #fff;
-            padding: 8px 12px;
+            background: rgba(15, 15, 20, 0.8);
+            border: 1px solid rgba(255, 255, 255, 0.25);
+            color: #eee;
+            padding: 7px 10px;
             font-size: 10px;
             font-family: monospace;
             border-radius: 4px;
@@ -60,13 +61,13 @@
 </head>
 <body>
     <div id="info">
-        L-SYSTEM // RETINA ULTRA-SHARP ENGINE<br>
-        模式: <span id="uiMode" style="color:#00ffcc">形态变异中</span><br>
+        L-SYSTEM // VECTOR PRECISION ENGINE<br>
+        模式: <span id="uiMode" style="color:#00ffcc">单指形态变异</span><br>
         ZOOM: <span id="uiZoom"></span> | LINES: <span id="uiDepth"></span>
     </div>
     <div class="hud-panel">
-        <button id="lockBtn" onclick="toggleLock()">[ 锁定形态 / 纯漫游 ]</button>
-        <button onclick="resetCamera()">[ 归位 RESET ]</button>
+        <button id="lockBtn" onclick="toggleLock()">[ 锁定形态 ]</button>
+        <button onclick="resetCamera()">[ 归位 ]</button>
     </div>
     <canvas id="treeCanvas"></canvas>
 
@@ -92,8 +93,9 @@
         let camX = 0, camY = 0;
         let zoom = 1.0;
         let isLocked = false;
+        let isInitialized = false;
 
-        // 触控时序与手势状态
+        // 手势状态
         let touchIntentTimer = null;
         let lastPinchDist = 0;
         let lastPinchCenter = { x: 0, y: 0 };
@@ -103,15 +105,21 @@
         function resize() {
             width = window.innerWidth;
             height = window.innerHeight;
-            // 依据设备像素比构建 2K 超分辨率显存缓冲区
-            dpr = Math.min(window.devicePixelRatio || 1, 3);
+            
+            // 性能与锐度平衡：限制在 1.5\~1.8 倍 DPR，消除卡顿同时确保视网膜级锐度
+            dpr = Math.min(window.devicePixelRatio || 1, 1.8);
             canvas.width = Math.floor(width * dpr);
             canvas.height = Math.floor(height * dpr);
             canvas.style.width = width + 'px';
             canvas.style.height = height + 'px';
 
-            if (camX === 0 && camY === 0) {
+            // 无论全屏还是非全屏切换，始终自动保持画面居中于视口
+            if (!isInitialized) {
                 resetCamera();
+                isInitialized = true;
+            } else {
+                camX = width / 2;
+                camY = height - 30;
             }
         }
         window.addEventListener('resize', resize);
@@ -119,7 +127,7 @@
 
         window.resetCamera = function() {
             camX = width / 2;
-            camY = height - 50;
+            camY = height - 30;
             zoom = 1.0;
         };
 
@@ -127,13 +135,13 @@
             isLocked = !isLocked;
             if (isLocked) {
                 lockBtn.classList.add('active');
-                lockBtn.innerText = '[ 已锁定形态 ]';
-                uiMode.innerText = '漫游视角 (单指平移/双指缩放)';
+                lockBtn.innerText = '[ 已锁定 ]';
+                uiMode.innerText = '漫游模式 (单指平移/双指缩放)';
                 uiMode.style.color = '#ffaa00';
             } else {
                 lockBtn.classList.remove('active');
-                lockBtn.innerText = '[ 锁定形态 / 纯漫游 ]';
-                uiMode.innerText = '形态变异中 (单指调节)';
+                lockBtn.innerText = '[ 锁定形态 ]';
+                uiMode.innerText = '单指形态变异';
                 uiMode.style.color = '#00ffcc';
             }
         };
@@ -145,11 +153,11 @@
             targetScale = 0.48 + normY * 0.28 + normX * 0.04; 
         }
 
-        // 电脑滚轮缩放
+        // 电脑滚轮缩放 (以光标为中心)
         window.addEventListener('wheel', (e) => {
             e.preventDefault();
             const zoomFactor = e.deltaY > 0 ? 0.85 : 1.15;
-            const newZoom = Math.max(0.2, Math.min(zoom * zoomFactor, 40.0));
+            const newZoom = Math.max(0.3, Math.min(zoom * zoomFactor, 35.0));
             const actualFactor = newZoom / zoom;
             
             camX = e.clientX - (e.clientX - camX) * actualFactor;
@@ -157,10 +165,9 @@
             zoom = newZoom;
         }, {passive: false});
 
-        // 触控时序滤波：解决微秒级触控时差冲突
+        // 触控防抖与双指隔离
         window.addEventListener('touchstart', (e) => {
             if (e.touches.length === 2) {
-                // 第二指落地：立即阻断单指形态更新计时器
                 if (touchIntentTimer) {
                     clearTimeout(touchIntentTimer);
                     touchIntentTimer = null;
@@ -175,13 +182,11 @@
                 };
             } else if (e.touches.length === 1) {
                 singleTouchStartPos = { x: e.touches[0].clientX, y: e.touches[0].clientY };
-                
                 if (!isLocked) {
-                    // 设立 80ms 意图缓冲期，过滤双指落差
                     touchIntentTimer = setTimeout(() => {
                         updateTopology(singleTouchStartPos.x, singleTouchStartPos.y);
                         touchIntentTimer = null;
-                    }, 80);
+                    }, 60);
                 }
             }
         }, {passive: false});
@@ -208,7 +213,7 @@
                 
                 if (lastPinchDist > 0) {
                     const zoomFactor = currDist / lastPinchDist;
-                    const newZoom = Math.max(0.2, Math.min(zoom * zoomFactor, 40.0));
+                    const newZoom = Math.max(0.3, Math.min(zoom * zoomFactor, 35.0));
                     const actualFactor = newZoom / zoom;
                     
                     camX = currentCenter.x - (currentCenter.x - camX) * actualFactor;
@@ -221,7 +226,6 @@
 
             } else if (e.touches.length === 1) {
                 if (isLocked) {
-                    // 锁定状态下单指负责全屏平移（Pan）
                     camX += (e.touches[0].clientX - singleTouchStartPos.x);
                     camY += (e.touches[0].clientY - singleTouchStartPos.y);
                     singleTouchStartPos = { x: e.touches[0].clientX, y: e.touches[0].clientY };
@@ -233,19 +237,19 @@
             }
         }, {passive: false});
 
-        window.addEventListener('touchend', (e) => {
+        window.addEventListener('touchend', () => {
             if (touchIntentTimer) {
                 clearTimeout(touchIntentTimer);
                 touchIntentTimer = null;
             }
         });
 
-        // 递归渲染核心
+        // 递归绘制：绝对细线逆补偿算法
         function drawBranch(len, depth) {
             if (depth <= 0) return;
 
-            // 物理像素剔除：视网膜下极短线条（小于 0.6px）终止递归
-            if (len * zoom * dpr < 0.6) return; 
+            // 物理像素剔除阈值：小于屏幕物理半像素不画，削减开销
+            if (len * zoom * dpr < 0.5) return; 
 
             ctx.beginPath();
             ctx.moveTo(0, 0);
@@ -256,19 +260,22 @@
             const wind = Math.sin(time + depth * 0.4) * 0.015;
             const hue = depth * 22 + time * 30;
 
-            // 核心修复：线宽逆补偿，消除缩放造成的粗管模糊感，保持刀锋级矢量锐度
-            const sharpLineWidth = Math.max((depth * 0.35 + 0.1) / Math.sqrt(zoom), 0.25);
-            ctx.lineWidth = sharpLineWidth;
+            // 核心修复：线宽必须按全局 zoom 进行严格反向缩减！
+            // 确保放大 10 倍后，线条依旧保持 0.5px 的纤细感，绝不变成粗管大白块
+            const branchWidth = Math.max((depth * 0.28 + 0.1) / zoom, 0.4 / zoom);
+            ctx.lineWidth = branchWidth;
+
+            // 柔和发光透明度，防止多层叠死成白色光团
+            ctx.strokeStyle = `hsla(${hue}, 100%, 65%, 0.85)`;
 
             ctx.save();
             ctx.rotate(curAngle + wind);
-            ctx.strokeStyle = `hsl(${hue}, 100%, 65%)`;
             drawBranch(len * curScale, depth - 1);
             ctx.restore();
 
             ctx.save();
             ctx.rotate(-curAngle + wind);
-            ctx.strokeStyle = `hsl(${hue + 90}, 100%, 65%)`;
+            ctx.strokeStyle = `hsla(${hue + 90}, 100%, 65%, 0.85)`;
             drawBranch(len * curScale, depth - 1);
             ctx.restore();
         }
@@ -277,34 +284,36 @@
             curAngle += (targetAngle - curAngle) * 0.08;
             curScale += (targetScale - curScale) * 0.08;
 
+            // 动态控制递归层级，锁死上限防止 CPU 阻塞
             let zoomBonus = Math.floor(Math.max(0, Math.log2(zoom)));
-            let currentDepth = Math.floor(10 + normX * 2) + zoomBonus;
-            currentDepth = Math.min(currentDepth, 15);
+            let currentDepth = Math.floor(9 + normX * 2) + zoomBonus;
+            currentDepth = Math.min(currentDepth, 13); // 13级 (8192根线) 是移动端流畅极值
 
             // 清屏
             ctx.save();
             ctx.setTransform(1, 0, 0, 1, 0, 0);
             ctx.globalCompositeOperation = 'source-over';
-            ctx.fillStyle = 'rgba(0, 0, 0, 0.45)';
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
             ctx.fillRect(0, 0, canvas.width, canvas.height);
             ctx.restore();
 
             uiZoom.innerText = zoom.toFixed(2) + 'x';
             uiDepth.innerText = Math.pow(2, currentDepth);
 
-            // 摄像机变换：将物理坐标系映射到超采样缓冲区
+            // 摄像机视口变换
             ctx.save();
             ctx.scale(dpr, dpr);
             ctx.translate(camX, camY);
             ctx.scale(zoom, zoom);
 
+            // 避免粗糙过曝：使用 round 连接与端点，取消全白覆盖
             ctx.globalCompositeOperation = 'lighter';
-            ctx.lineCap = 'butt';
-            ctx.lineJoin = 'miter';
-            ctx.strokeStyle = '#ffffff';
+            ctx.lineCap = 'round';
+            ctx.lineJoin = 'round';
             
-            const trunkLen = Math.min(height * 0.15, 120);
-            ctx.lineWidth = Math.max(3.0 / Math.sqrt(zoom), 0.8);
+            const trunkLen = Math.min(height * 0.16, 125);
+            ctx.lineWidth = Math.max(2.5 / zoom, 0.8 / zoom);
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.9)';
             drawBranch(trunkLen, currentDepth); 
             ctx.restore();
 
@@ -315,4 +324,3 @@
     </script>
 </body>
 </html>
-
