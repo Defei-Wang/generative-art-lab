@@ -3,15 +3,17 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>互动 L-System 变异植物</title>
+    <title>互动 L-System 变异植物 - 智能摄像机版</title>
     <style>
         body { 
             margin: 0; 
             overflow: hidden; 
-            background: #0a0a0a; 
+            background: #050505; 
             touch-action: none; 
             width: 100vw; 
             height: 100vh; 
+            position: fixed; /* 彻底锁死全屏，禁止手机浏览器滚动条 */
+            top: 0; left: 0;
         }
         canvas { 
             display: block; 
@@ -25,43 +27,53 @@
             color: #00ffcc; 
             font-family: monospace; 
             pointer-events: none; 
-            font-size: 12px; 
-            line-height: 1.6;
-            text-shadow: 0 1px 3px #000;
+            font-size: 11px; 
+            line-height: 1.8;
+            text-shadow: 0 1px 4px #000;
+            z-index: 10;
         }
         .highlight { color: #ff3366; font-weight: bold; }
     </style>
 </head>
 <body>
     <div id="info">
-        L-SYSTEM RECURSIVE PLANT<br>
-        状态：<span class="highlight">全量程张角 / 解除对称锁</span><br>
-        交互：向上拉伸拔高 / 向右拖拽体验极限卷曲
-        <br>SPREAD: <span id="ang"></span> | GROWTH: <span id="sca"></span>
+        L-SYSTEM // SMART CAMERA ENGINE<br>
+        状态：<span class="highlight">自适应景深 / 动态递归密度</span><br>
+        交互：Y轴拔高 (Zoom Out) / X轴卷曲 (Zoom In)<br>
+        CAMERA ZOOM: <span id="uiZoom"></span> | DENSITY: <span id="uiDepth"></span>
     </div>
     <canvas id="treeCanvas"></canvas>
 
     <script>
         const canvas = document.getElementById('treeCanvas');
-        const ctx = canvas.getContext('2d');
-        const angDisp = document.getElementById('ang');
-        const scaDisp = document.getElementById('sca');
+        const ctx = canvas.getContext('2d', { alpha: false });
+        const uiZoom = document.getElementById('uiZoom');
+        const uiDepth = document.getElementById('uiDepth');
         
         let width = 0, height = 0;
-        let mouseX = 0, mouseY = 0;
+        
+        // 形态目标参数
         let targetAngle = 0.45; 
         let targetScale = 0.65; 
         let curAngle = targetAngle;
         let curScale = targetScale;
+
+        // 智能摄像机参数
+        let targetCamZoom = 1.0;
+        let targetCamY = 0;
+        let camZoom = 1.0;
+        let camY = 0;
+
         let time = 0;
         let isTouching = false;
+        let normX = 0.3, normY = 0.5; // 归一化输入值 (0~1)
 
         function resize() {
             width = canvas.width = window.innerWidth;
             height = canvas.height = window.innerHeight;
             if (!isTouching) {
-                mouseX = width * 0.3;
-                mouseY = height * 0.45;
+                targetCamY = height - 40;
+                camY = targetCamY;
             }
         }
         window.addEventListener('resize', resize);
@@ -69,74 +81,103 @@
 
         function updateInput(clientX, clientY) {
             isTouching = true;
-            mouseX = clientX;
-            mouseY = clientY;
+            
+            // 计算屏幕空间的归一化比例 (0.0 到 1.0)
+            normX = Math.min(Math.max(clientX / width, 0.0), 1.0);
+            normY = 1.0 - Math.min(Math.max(clientY / height, 0.05), 0.95); // 向上滑动为正
 
-            // Y轴：向上滑动拔高生长
-            const normY = 1.0 - Math.min(Math.max(mouseY / height, 0.05), 0.95);
-            targetScale = 0.45 + normY * 0.32; 
+            // 1. 植物形态映射
+            targetAngle = 0.02 + normX * Math.PI * 0.85; // 从闭合到极其夸张的张角
+            // 当往右滑动（卷曲）时，稍微增加一点长度比例，防止图形过早萎缩
+            targetScale = 0.50 + normY * 0.25 + normX * 0.06; 
 
-            // 【核心修正】：X轴解除中心对称，改为从左到右的线性映射！
-            // 鼠标在最左侧时，树枝闭合 (0.05 rad)；在最右侧时，暴力张开到 144° 极限卷曲！
-            const normX = Math.min(Math.max(mouseX / width, 0.0), 1.0);
-            targetAngle = 0.05 + normX * Math.PI * 0.8; 
+            // 2. 智能摄像机映射
+            // 往上长(normY大)：拉远镜头 (Zoom Out) 0.7x
+            // 往右卷(normX大)：推近镜头 (Zoom In) 1.6x 观察微观蜂巢
+            targetCamZoom = 1.0 - normY * 0.3 + normX * 0.8;
+            
+            // 树根位置：平时在底部；卷成球时，把树根往屏幕中央提，使得整棵树居中
+            targetCamY = height - 30 - normX * (height * 0.35); 
         }
 
         window.addEventListener('mousemove', e => updateInput(e.clientX, e.clientY));
         window.addEventListener('touchmove', e => { 
             updateInput(e.touches[0].clientX, e.touches[0].clientY); 
-            e.preventDefault(); 
+            e.preventDefault(); // 阻止手机浏览器下拉刷新
         }, {passive: false});
         window.addEventListener('touchstart', e => updateInput(e.touches[0].clientX, e.touches[0].clientY), {passive: false});
         window.addEventListener('touchend', () => { isTouching = false; });
 
         function drawBranch(len, depth) {
+            if (depth <= 0) return;
+
             ctx.beginPath();
             ctx.moveTo(0, 0);
             ctx.lineTo(0, -len);
             ctx.stroke();
             ctx.translate(0, -len);
 
-            if (depth === 0) return;
+            // 让树枝像海草一样轻微呼吸
+            const wind = Math.sin(time + depth * 0.5) * 0.02;
 
-            const wind = Math.sin(time + depth * 0.8) * 0.03;
+            // 根据深度和时间计算发光色彩
+            const hue = depth * 25 + time * 40;
 
             // 右侧分支
             ctx.save();
             ctx.rotate(curAngle + wind);
-            ctx.strokeStyle = `hsl(${depth * 28 + time * 30}, 100%, 65%)`;
-            ctx.lineWidth = Math.max(depth * 0.7, 0.8);
+            ctx.strokeStyle = `hsl(${hue}, 100%, 65%)`;
+            ctx.lineWidth = Math.max(depth * 0.6, 0.5); // 末端树枝更细致
             drawBranch(len * curScale, depth - 1);
             ctx.restore();
 
             // 左侧分支
             ctx.save();
             ctx.rotate(-curAngle + wind);
-            ctx.strokeStyle = `hsl(${depth * 28 + time * 30 + 120}, 100%, 65%)`;
-            ctx.lineWidth = Math.max(depth * 0.7, 0.8);
+            ctx.strokeStyle = `hsl(${hue + 90}, 100%, 65%)`;
+            ctx.lineWidth = Math.max(depth * 0.6, 0.5);
             drawBranch(len * curScale, depth - 1);
             ctx.restore();
         }
 
         function render() {
+            // 参数平滑插值 (Lerp)，制造如丝般顺滑的动画阻尼感
             curAngle += (targetAngle - curAngle) * 0.08;
             curScale += (targetScale - curScale) * 0.08;
+            camZoom += (targetCamZoom - camZoom) * 0.06;
+            camY += (targetCamY - camY) * 0.06;
 
-            ctx.fillStyle = 'rgba(10, 10, 10, 0.35)';
+            // 动态递归密度：往右划时，逐渐增加分支数量填补空隙
+            // 从 10 层无缝增加到 12 层 (4096 根线)，保证在镜头拉近时细节依然致密
+            const currentDepth = Math.floor(10 + normX * 2);
+
+            // 清屏 (带微弱拖尾)
+            ctx.globalCompositeOperation = 'source-over';
+            ctx.fillStyle = 'rgba(5, 5, 8, 0.4)';
             ctx.fillRect(0, 0, width, height);
 
-            angDisp.innerText = ((curAngle / Math.PI) * 180).toFixed(1) + '°';
-            scaDisp.innerText = curScale.toFixed(2);
+            // UI 数值更新
+            uiZoom.innerText = camZoom.toFixed(2) + 'x';
+            uiDepth.innerText = Math.pow(2, currentDepth) + ' LINES';
 
+            // 启动智能摄像机矩阵
             ctx.save();
-            ctx.translate(width / 2, height - 20);
+            ctx.translate(width / 2, camY);
+            ctx.scale(camZoom, camZoom); // 摄像机缩放
+            
+            // 采用屏幕叠加混合模式，让密集的树枝交织处产生赛博朋克般的发光过曝效果
+            ctx.globalCompositeOperation = 'lighter';
+            ctx.lineCap = 'round';
+            ctx.lineJoin = 'round';
+            
             ctx.strokeStyle = '#ffffff';
-            ctx.lineWidth = 6;
+            ctx.lineWidth = 8;
             
-            const trunkLen = Math.min(height * 0.22, 180);
+            // 初始树干长度
+            const trunkLen = Math.min(height * 0.18, 150);
             
-            // 提升递归深度到 10 层，配合暴力张角产生更密集的细节
-            drawBranch(trunkLen, 10); 
+            // 开始绘制
+            drawBranch(trunkLen, currentDepth); 
             ctx.restore();
 
             time += 0.02;
