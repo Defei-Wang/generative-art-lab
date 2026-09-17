@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>图灵斑图 (Reaction-Diffusion) - 连续笔触插值版</title>
+    <title>图灵斑图 (Reaction-Diffusion) - 低色温琥珀金护眼版</title>
     <style>
         body { 
             margin: 0; 
@@ -22,21 +22,21 @@
             position: absolute; 
             top: 20px; 
             left: 20px; 
-            color: #fff; 
+            color: rgba(255, 255, 255, 0.7); 
             font-family: monospace; 
             font-size: 12px; 
             pointer-events: none; 
-            mix-blend-mode: difference; 
+            text-shadow: 0 1px 3px #000;
             line-height: 1.6; 
         }
-        .highlight { color: #00ffcc; font-weight: bold; }
+        .highlight { color: #ffb833; font-weight: bold; }
     </style>
 </head>
 <body>
     <div id="ui">
-        TURING PATTERN // CONTINUOUS INJECTION<br>
-        状态：<span class="highlight">运动矢量高频线性插值 (消除断点)</span><br>
-        交互：任意速度划动，形成连贯流体轨迹
+        TURING PATTERN // AMBER BIOLUMINESCENCE<br>
+        光谱：<span class="highlight">黑曜石底质 / 低能级暖金脊线</span><br>
+        交互：轻触划动屏幕，观察化学原纤生长
     </div>
     <canvas id="rdCanvas"></canvas>
 
@@ -80,6 +80,7 @@
                 grid[i * 2 + 1] = 0.0;
             }
 
+            // 中心初始种子
             const cx = Math.floor(simW / 2);
             const cy = Math.floor(simH / 2);
             const seedR = 8;
@@ -121,9 +122,7 @@
         }
 
         function onPointerMove(e) {
-            if (pointer.down) {
-                updatePointer(e);
-            }
+            if (pointer.down) updatePointer(e);
         }
 
         function onPointerUp() {
@@ -145,7 +144,6 @@
         }, { passive: false });
         window.addEventListener('touchend', onPointerUp);
 
-        // 局部软核注入函数
         function injectAt(cx, cy) {
             const brushR = 2.8;
             const rCeil = Math.ceil(brushR);
@@ -168,7 +166,6 @@
         }
 
         function evolve() {
-            // 连续笔触线性插值：将离散事件连接为连续柱状体
             if (pointer.down) {
                 if (pointer.isFirst) {
                     injectAt(pointer.x, pointer.y);
@@ -177,7 +174,6 @@
                     const dx = pointer.x - pointer.prevX;
                     const dy = pointer.y - pointer.prevY;
                     const dist = Math.hypot(dx, dy);
-                    // 步长设为 1.2 个网格单位，确保高速滑动下采样点紧密相切无断层
                     const steps = Math.max(1, Math.ceil(dist / 1.2));
                     
                     for (let s = 1; s <= steps; s++) {
@@ -239,15 +235,19 @@
                 const temp = grid; grid = next; next = temp;
             }
 
+            // 核心修复：低能级暖色调光谱传递函数
             const pixels = imageData.data;
             const len = simW * simH;
             for (let i = 0; i < len; i++) {
                 const val = grid[i * 2] - grid[i * 2 + 1];
+                // 提取反应活性脊线强度因子 u：背景区域归零，反应活跃核心趋向 1.0
+                const u = Math.max(0.0, Math.min(1.0, (0.85 - val) * 1.35));
                 const p = i * 4;
 
-                pixels[p] = Math.max(0, 45 - val * 180);
-                pixels[p + 1] = Math.max(15, 240 - Math.abs(val + 0.15) * 320);
-                pixels[p + 2] = Math.max(45, 190 + val * 100);
+                // 背景为深邃黑曜石，脊线为琥珀暖金 (R > G >> B)，彻底消除短波蓝光
+                pixels[p]     = 10 + u * 242;                                    // Red 暖色主导
+                pixels[p + 1] = 12 + Math.pow(u, 1.4) * 180;                     // Green 柔和微量
+                pixels[p + 2] = 16 + Math.max(0.0, Math.sin(u * Math.PI) * 25);  // Blue 极小化抑制
                 pixels[p + 3] = 255;
             }
 
