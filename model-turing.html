@@ -3,12 +3,12 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>图灵斑图 (Reaction-Diffusion) - 低色温琥珀金护眼版</title>
+    <title>图灵斑图 (Reaction-Diffusion) - 黏菌仿生版</title>
     <style>
         body { 
             margin: 0; 
             overflow: hidden; 
-            background: #000; 
+            background: #080a08; 
             touch-action: none; 
             width: 100vw; 
             height: 100vh; 
@@ -22,21 +22,21 @@
             position: absolute; 
             top: 20px; 
             left: 20px; 
-            color: rgba(255, 255, 255, 0.7); 
+            color: rgba(210, 195, 140, 0.7); 
             font-family: monospace; 
             font-size: 12px; 
             pointer-events: none; 
             text-shadow: 0 1px 3px #000;
             line-height: 1.6; 
         }
-        .highlight { color: #ffb833; font-weight: bold; }
+        .highlight { color: #d4a72c; font-weight: bold; }
     </style>
 </head>
 <body>
     <div id="ui">
-        TURING PATTERN // AMBER BIOLUMINESCENCE<br>
-        光谱：<span class="highlight">黑曜石底质 / 低能级暖金脊线</span><br>
-        交互：轻触划动屏幕，观察化学原纤生长
+        TURING PATTERN // PHYSARUM SLIME ENGINE<br>
+        光谱：<span class="highlight">黏菌原纤维 (低饱和芥末黄)</span><br>
+        轨迹：<span class="highlight">二阶贝塞尔样条平滑 (消除折线感)</span>
     </div>
     <canvas id="rdCanvas"></canvas>
 
@@ -96,56 +96,51 @@
         initSimulation();
         window.addEventListener('resize', initSimulation);
 
-        let pointer = { 
-            x: -100, 
-            y: -100, 
-            prevX: -100, 
-            prevY: -100, 
-            down: false, 
-            isFirst: true 
-        };
+        // 触控与样条插值缓冲队列
+        let isDown = false;
+        let strokeQueue = [];
 
-        function updatePointer(e) {
+        function getSimCoords(clientX, clientY) {
             const rect = canvas.getBoundingClientRect();
-            const clientX = e.touches ? e.touches[0].clientX : e.clientX;
-            const clientY = e.touches ? e.touches[0].clientY : e.clientY;
-            pointer.x = ((clientX - rect.left) / rect.width) * simW;
-            pointer.y = ((clientY - rect.top) / rect.height) * simH;
+            return {
+                x: ((clientX - rect.left) / rect.width) * simW,
+                y: ((clientY - rect.top) / rect.height) * simH
+            };
         }
 
-        function onPointerDown(e) {
-            pointer.down = true;
-            pointer.isFirst = true;
-            updatePointer(e);
-            pointer.prevX = pointer.x;
-            pointer.prevY = pointer.y;
+        function onStart(x, y) {
+            isDown = true;
+            strokeQueue = [getSimCoords(x, y)];
+            injectAt(strokeQueue[0].x, strokeQueue[0].y);
         }
 
-        function onPointerMove(e) {
-            if (pointer.down) updatePointer(e);
+        function onMove(x, y) {
+            if (!isDown) return;
+            strokeQueue.push(getSimCoords(x, y));
         }
 
-        function onPointerUp() {
-            pointer.down = false;
+        function onEnd() {
+            isDown = false;
+            strokeQueue = [];
         }
 
-        window.addEventListener('mousedown', onPointerDown);
-        window.addEventListener('mousemove', onPointerMove);
-        window.addEventListener('mouseup', onPointerUp);
-        window.addEventListener('mouseleave', onPointerUp);
+        window.addEventListener('mousedown', e => onStart(e.clientX, e.clientY));
+        window.addEventListener('mousemove', e => onMove(e.clientX, e.clientY));
+        window.addEventListener('mouseup', onEnd);
+        window.addEventListener('mouseleave', onEnd);
 
-        window.addEventListener('touchstart', (e) => { 
-            onPointerDown(e); 
+        window.addEventListener('touchstart', e => { 
+            onStart(e.touches[0].clientX, e.touches[0].clientY); 
             e.preventDefault(); 
         }, { passive: false });
-        window.addEventListener('touchmove', (e) => { 
-            onPointerMove(e); 
+        window.addEventListener('touchmove', e => { 
+            onMove(e.touches[0].clientX, e.touches[0].clientY); 
             e.preventDefault(); 
         }, { passive: false });
-        window.addEventListener('touchend', onPointerUp);
+        window.addEventListener('touchend', onEnd);
 
         function injectAt(cx, cy) {
-            const brushR = 2.8;
+            const brushR = 2.6;
             const rCeil = Math.ceil(brushR);
             const minX = Math.max(1, Math.floor(cx - rCeil));
             const maxX = Math.min(simW - 2, Math.ceil(cx + rCeil));
@@ -158,32 +153,58 @@
                     if (distSq <= brushR * brushR) {
                         const falloff = 1.0 - Math.sqrt(distSq) / brushR;
                         const idx = (py * simW + px) * 2;
-                        grid[idx] = Math.max(0.1, grid[idx] - falloff * 0.28);
-                        grid[idx + 1] = Math.min(0.85, grid[idx + 1] + falloff * 0.38);
+                        grid[idx] = Math.max(0.12, grid[idx] - falloff * 0.25);
+                        grid[idx + 1] = Math.min(0.82, grid[idx + 1] + falloff * 0.35);
                     }
                 }
             }
         }
 
-        function evolve() {
-            if (pointer.down) {
-                if (pointer.isFirst) {
-                    injectAt(pointer.x, pointer.y);
-                    pointer.isFirst = false;
-                } else {
-                    const dx = pointer.x - pointer.prevX;
-                    const dy = pointer.y - pointer.prevY;
-                    const dist = Math.hypot(dx, dy);
-                    const steps = Math.max(1, Math.ceil(dist / 1.2));
-                    
-                    for (let s = 1; s <= steps; s++) {
-                        const t = s / steps;
-                        injectAt(pointer.prevX + dx * t, pointer.prevY + dy * t);
-                    }
+        function processStrokeQueue() {
+            if (strokeQueue.length < 2) return;
+
+            // 当积累点数达到 3 个时，执行二次贝塞尔样条平滑插值
+            while (strokeQueue.length >= 3) {
+                const p0 = strokeQueue[0];
+                const p1 = strokeQueue[1];
+                const p2 = strokeQueue[2];
+
+                const m0x = (p0.x + p1.x) * 0.5;
+                const m0y = (p0.y + p1.y) * 0.5;
+                const m1x = (p1.x + p2.x) * 0.5;
+                const m1y = (p1.y + p2.y) * 0.5;
+
+                const chord = Math.hypot(m1x - m0x, m1y - m0y);
+                const steps = Math.max(1, Math.ceil(chord / 1.0));
+
+                for (let i = 1; i <= steps; i++) {
+                    const t = i / steps;
+                    const it = 1.0 - t;
+                    // 二次贝塞尔曲线方程
+                    const qx = it * it * m0x + 2 * it * t * p1.x + t * t * m1x;
+                    const qy = it * it * m0y + 2 * it * t * p1.y + t * t * m1y;
+                    injectAt(qx, qy);
                 }
-                pointer.prevX = pointer.x;
-                pointer.prevY = pointer.y;
+
+                strokeQueue.shift();
             }
+
+            // 处理队列末尾的遗留段
+            if (strokeQueue.length === 2 && !isDown) {
+                const p0 = strokeQueue[0];
+                const p1 = strokeQueue[1];
+                const dist = Math.hypot(p1.x - p0.x, p1.y - p0.y);
+                const steps = Math.max(1, Math.ceil(dist / 1.0));
+                for (let i = 1; i <= steps; i++) {
+                    const t = i / steps;
+                    injectAt(p0.x + (p1.x - p0.x) * t, p0.y + (p1.y - p0.y) * t);
+                }
+                strokeQueue.shift();
+            }
+        }
+
+        function evolve() {
+            processStrokeQueue();
 
             const w2 = simW * 2;
             for (let step = 0; step < 7; step++) {
@@ -235,19 +256,19 @@
                 const temp = grid; grid = next; next = temp;
             }
 
-            // 核心修复：低能级暖色调光谱传递函数
+            // 黏菌光谱传递函数：芥末赭黄与暗橄榄微调
             const pixels = imageData.data;
             const len = simW * simH;
             for (let i = 0; i < len; i++) {
                 const val = grid[i * 2] - grid[i * 2 + 1];
-                // 提取反应活性脊线强度因子 u：背景区域归零，反应活跃核心趋向 1.0
-                const u = Math.max(0.0, Math.min(1.0, (0.85 - val) * 1.35));
+                // 活性标量 u 范围锁在 0.0 到 1.0
+                const u = Math.max(0.0, Math.min(1.0, (0.82 - val) * 1.4));
                 const p = i * 4;
 
-                // 背景为深邃黑曜石，脊线为琥珀暖金 (R > G >> B)，彻底消除短波蓝光
-                pixels[p]     = 10 + u * 242;                                    // Red 暖色主导
-                pixels[p + 1] = 12 + Math.pow(u, 1.4) * 180;                     // Green 柔和微量
-                pixels[p + 2] = 16 + Math.max(0.0, Math.sin(u * Math.PI) * 25);  // Blue 极小化抑制
+                // 抑制极端亮度：R 最高约 200，G 最高约 170，B 保持微弱暗土色
+                pixels[p]     = 8 + u * 192;                        // 柔和赭黄
+                pixels[p + 1] = 10 + Math.pow(u, 1.15) * 162;       // 黏菌草本绿调
+                pixels[p + 2] = 8 + u * 28;                         // 极低蓝光
                 pixels[p + 3] = 255;
             }
 
