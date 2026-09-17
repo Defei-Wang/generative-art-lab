@@ -3,17 +3,15 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>互动 L-System 变异植物 - 智能摄像机版</title>
+    <title>互动 L-System - 极限微观探索版</title>
     <style>
         body { 
             margin: 0; 
             overflow: hidden; 
-            background: #050505; 
-            touch-action: none; 
+            background: #030303; 
+            touch-action: none; /* 彻底禁用系统默认手势，把控制权交给 JS */
             width: 100vw; 
             height: 100vh; 
-            position: fixed; /* 彻底锁死全屏，禁止手机浏览器滚动条 */
-            top: 0; left: 0;
         }
         canvas { 
             display: block; 
@@ -33,14 +31,14 @@
             z-index: 10;
         }
         .highlight { color: #ff3366; font-weight: bold; }
+        .danger { color: #ffaa00; font-weight: bold; }
     </style>
 </head>
 <body>
     <div id="info">
-        L-SYSTEM // SMART CAMERA ENGINE<br>
-        状态：<span class="highlight">自适应景深 / 动态递归密度</span><br>
-        交互：Y轴拔高 (Zoom Out) / X轴卷曲 (Zoom In)<br>
-        CAMERA ZOOM: <span id="uiZoom"></span> | DENSITY: <span id="uiDepth"></span>
+        L-SYSTEM // INFINITE MICROSCOPY ENGINE<br>
+        交互：单指改变拓扑 / <span class="highlight">双指或滚轮无极缩放</span><br>
+        ZOOM: <span id="uiZoom"></span> | DENSITY: <span id="uiDepth"></span>
     </div>
     <canvas id="treeCanvas"></canvas>
 
@@ -50,66 +48,90 @@
         const uiZoom = document.getElementById('uiZoom');
         const uiDepth = document.getElementById('uiDepth');
         
-        let width = 0, height = 0;
+        let width = window.innerWidth;
+        let height = window.innerHeight;
         
-        // 形态目标参数
+        // 形态目标参数 (单指控制)
         let targetAngle = 0.45; 
         let targetScale = 0.65; 
         let curAngle = targetAngle;
         let curScale = targetScale;
+        let normX = 0.3, normY = 0.5;
 
-        // 智能摄像机参数
-        let targetCamZoom = 1.0;
-        let targetCamY = 0;
-        let camZoom = 1.0;
+        // 无极缩放引擎 (双指/滚轮控制)
+        let manualZoom = 1.0;
+        let targetManualZoom = 1.0;
+        let initialPinchDist = 0;
+        let initialZoom = 1.0;
         let camY = 0;
-
         let time = 0;
-        let isTouching = false;
-        let normX = 0.3, normY = 0.5; // 归一化输入值 (0~1)
 
-        function resize() {
+        window.addEventListener('resize', () => {
             width = canvas.width = window.innerWidth;
             height = canvas.height = window.innerHeight;
-            if (!isTouching) {
-                targetCamY = height - 40;
-                camY = targetCamY;
-            }
-        }
-        window.addEventListener('resize', resize);
-        resize();
+        });
+        window.dispatchEvent(new Event('resize'));
 
-        function updateInput(clientX, clientY) {
-            isTouching = true;
-            
-            // 计算屏幕空间的归一化比例 (0.0 到 1.0)
+        function updateTopology(clientX, clientY) {
             normX = Math.min(Math.max(clientX / width, 0.0), 1.0);
-            normY = 1.0 - Math.min(Math.max(clientY / height, 0.05), 0.95); // 向上滑动为正
+            normY = 1.0 - Math.min(Math.max(clientY / height, 0.05), 0.95);
 
-            // 1. 植物形态映射
-            targetAngle = 0.02 + normX * Math.PI * 0.85; // 从闭合到极其夸张的张角
-            // 当往右滑动（卷曲）时，稍微增加一点长度比例，防止图形过早萎缩
-            targetScale = 0.50 + normY * 0.25 + normX * 0.06; 
-
-            // 2. 智能摄像机映射
-            // 往上长(normY大)：拉远镜头 (Zoom Out) 0.7x
-            // 往右卷(normX大)：推近镜头 (Zoom In) 1.6x 观察微观蜂巢
-            targetCamZoom = 1.0 - normY * 0.3 + normX * 0.8;
-            
-            // 树根位置：平时在底部；卷成球时，把树根往屏幕中央提，使得整棵树居中
-            targetCamY = height - 30 - normX * (height * 0.35); 
+            targetAngle = 0.02 + normX * Math.PI * 0.85; 
+            targetScale = 0.48 + normY * 0.28 + normX * 0.04; 
         }
 
-        window.addEventListener('mousemove', e => updateInput(e.clientX, e.clientY));
-        window.addEventListener('touchmove', e => { 
-            updateInput(e.touches[0].clientX, e.touches[0].clientY); 
-            e.preventDefault(); // 阻止手机浏览器下拉刷新
+        // ====== 电脑滚轮缩放 ======
+        window.addEventListener('wheel', (e) => {
+            e.preventDefault();
+            const zoomDelta = e.deltaY > 0 ? 0.85 : 1.15; // 每次滚动放大/缩小 15%
+            targetManualZoom *= zoomDelta;
+            // 限制缩放极值 (最小 0.2 倍，最大 20 倍显微镜级别)
+            targetManualZoom = Math.max(0.2, Math.min(targetManualZoom, 20.0));
         }, {passive: false});
-        window.addEventListener('touchstart', e => updateInput(e.touches[0].clientX, e.touches[0].clientY), {passive: false});
-        window.addEventListener('touchend', () => { isTouching = false; });
 
+        // ====== 手机多点触控 ======
+        window.addEventListener('touchstart', (e) => {
+            if (e.touches.length === 2) {
+                // 双指按下，记录初始距离用于捏合缩放
+                initialPinchDist = Math.hypot(
+                    e.touches[0].clientX - e.touches[1].clientX,
+                    e.touches[0].clientY - e.touches[1].clientY
+                );
+                initialZoom = targetManualZoom;
+            } else if (e.touches.length === 1) {
+                // 单指按下，改变形态
+                updateTopology(e.touches[0].clientX, e.touches[0].clientY);
+            }
+        }, {passive: false});
+
+        window.addEventListener('touchmove', (e) => { 
+            e.preventDefault(); // 阻止所有默认滚动
+            if (e.touches.length === 2) {
+                // 双指捏合运算
+                const currDist = Math.hypot(
+                    e.touches[0].clientX - e.touches[1].clientX,
+                    e.touches[0].clientY - e.touches[1].clientY
+                );
+                targetManualZoom = initialZoom * (currDist / initialPinchDist);
+                targetManualZoom = Math.max(0.2, Math.min(targetManualZoom, 20.0));
+            } else if (e.touches.length === 1) {
+                // 单指滑动运算
+                updateTopology(e.touches[0].clientX, e.touches[0].clientY);
+            }
+        }, {passive: false});
+
+        // 电脑鼠标单指控制
+        window.addEventListener('mousemove', e => {
+            if(e.buttons === 1) updateTopology(e.clientX, e.clientY); // 左键按下时拖动
+            else if(e.buttons === 0 && e.clientX && !('ontouchstart' in window)) updateTopology(e.clientX, e.clientY); // 纯鼠标移动
+        });
+
+        // 递归渲染核心
         function drawBranch(len, depth) {
             if (depth <= 0) return;
+
+            // 为了性能：在极细微的线段（小于0.5像素）时终止递归，这是防止CPU熔断的安全阀
+            if (len * manualZoom < 0.5) return; 
 
             ctx.beginPath();
             ctx.moveTo(0, 0);
@@ -117,70 +139,74 @@
             ctx.stroke();
             ctx.translate(0, -len);
 
-            // 让树枝像海草一样轻微呼吸
-            const wind = Math.sin(time + depth * 0.5) * 0.02;
+            const wind = Math.sin(time + depth * 0.4) * 0.015;
+            const hue = depth * 22 + time * 30;
 
-            // 根据深度和时间计算发光色彩
-            const hue = depth * 25 + time * 40;
+            // 利用 lineWidth 与层级的关系，确保末端细如发丝，根部粗壮
+            ctx.lineWidth = Math.max(depth * 0.45, 0.3); 
 
-            // 右侧分支
+            // 右侧
             ctx.save();
             ctx.rotate(curAngle + wind);
             ctx.strokeStyle = `hsl(${hue}, 100%, 65%)`;
-            ctx.lineWidth = Math.max(depth * 0.6, 0.5); // 末端树枝更细致
             drawBranch(len * curScale, depth - 1);
             ctx.restore();
 
-            // 左侧分支
+            // 左侧
             ctx.save();
             ctx.rotate(-curAngle + wind);
             ctx.strokeStyle = `hsl(${hue + 90}, 100%, 65%)`;
-            ctx.lineWidth = Math.max(depth * 0.6, 0.5);
             drawBranch(len * curScale, depth - 1);
             ctx.restore();
         }
 
         function render() {
-            // 参数平滑插值 (Lerp)，制造如丝般顺滑的动画阻尼感
+            // 平滑阻尼
             curAngle += (targetAngle - curAngle) * 0.08;
             curScale += (targetScale - curScale) * 0.08;
-            camZoom += (targetCamZoom - camZoom) * 0.06;
-            camY += (targetCamY - camY) * 0.06;
+            manualZoom += (targetManualZoom - manualZoom) * 0.1;
+            
+            // 动态自动镜头补正
+            const targetCamY = height - 30 + (manualZoom > 1 ? (manualZoom - 1) * height * 0.4 : 0);
+            camY += (targetCamY - camY) * 0.08;
 
-            // 动态递归密度：往右划时，逐渐增加分支数量填补空隙
-            // 从 10 层无缝增加到 12 层 (4096 根线)，保证在镜头拉近时细节依然致密
-            const currentDepth = Math.floor(10 + normX * 2);
+            // ==========================================
+            // 【LOD 细节动态加载逻辑】
+            // 基础级别: 11
+            // 根据向右张开的程度 (+2)
+            // 根据放大的倍数无限制加持 (zoomBonus)
+            // ==========================================
+            let zoomBonus = Math.floor(Math.max(0, Math.log2(manualZoom)));
+            let currentDepth = Math.floor(11 + normX * 2) + zoomBonus;
+            
+            // 极限性能锁：强行拦截超过 15 级的递归，保护 CPU 不宕机
+            // 15 级 = 32768 根独立的渲染线条！
+            currentDepth = Math.min(currentDepth, 15);
 
-            // 清屏 (带微弱拖尾)
             ctx.globalCompositeOperation = 'source-over';
-            ctx.fillStyle = 'rgba(5, 5, 8, 0.4)';
+            ctx.fillStyle = 'rgba(3, 3, 4, 0.6)';
             ctx.fillRect(0, 0, width, height);
 
-            // UI 数值更新
-            uiZoom.innerText = camZoom.toFixed(2) + 'x';
-            uiDepth.innerText = Math.pow(2, currentDepth) + ' LINES';
+            const lineCount = Math.pow(2, currentDepth);
+            uiZoom.innerText = manualZoom.toFixed(2) + 'x';
+            uiDepth.innerHTML = lineCount + (lineCount >= 16384 ? ' <span class="danger"> [EXTREME]</span>' : ' LINES');
 
-            // 启动智能摄像机矩阵
             ctx.save();
+            // 应用缩放和摄像机矩阵
             ctx.translate(width / 2, camY);
-            ctx.scale(camZoom, camZoom); // 摄像机缩放
+            ctx.scale(manualZoom, manualZoom); 
             
-            // 采用屏幕叠加混合模式，让密集的树枝交织处产生赛博朋克般的发光过曝效果
             ctx.globalCompositeOperation = 'lighter';
             ctx.lineCap = 'round';
             ctx.lineJoin = 'round';
-            
             ctx.strokeStyle = '#ffffff';
-            ctx.lineWidth = 8;
+            ctx.lineWidth = 6;
             
-            // 初始树干长度
-            const trunkLen = Math.min(height * 0.18, 150);
-            
-            // 开始绘制
+            const trunkLen = Math.min(height * 0.15, 120);
             drawBranch(trunkLen, currentDepth); 
             ctx.restore();
 
-            time += 0.02;
+            time += 0.015;
             requestAnimationFrame(render);
         }
         render();
